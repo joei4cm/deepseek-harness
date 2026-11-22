@@ -47,6 +47,7 @@ kind: "package-reference"
 | `provider` | 必填 | `ctx.subagents` 上的提供方名称（如 `spawn`、`fork`、`acp`） |
 | `toolName` | `subagent` | 面向模型的工具名称；每个已加载实例必须不同 |
 | `modelSelection` | `false` | 公开可选子级路由字段；要求提供方支持 `agentOptions` |
+| `modelAdvice` | `false` | 当调用与 `agentOptions` 都未指定路由时，由 `subagent/model-advice` 链决定每个子级的路由；要求提供方支持 `agentOptions` |
 | `modelDiscovery` | `false` | 注册 `list_subagent_models`；每个工具作用域仅在一个实例上启用 |
 | `agentOptions` | — | 配置的子级 `provider`、`model`、适配器所有的 `reasoningEffort` 与正整数 `maxTokens` 默认值；要求提供方支持 `agentOptions`，并会覆盖提供方持有的路由默认值 |
 | `agentPreset` | — | 独立子级 preset 的默认 id；要求进程内 spawn |
@@ -77,6 +78,13 @@ kind: "package-reference"
 设置 `modelSelection: true` 后，该实例公开可选的 `provider`、`model` 和 `reasoning_effort` 字段；未设置的实例拒绝选择字段。在每个工具作用域的一个实例上设置 `modelDiscovery: true`，以注册 `list_subagent_models`；该选项独立于 `modelSelection`，默认关闭。同一作用域的第二个发现工具所有者会注册失败。发现工具随其所属插件实例存续，在委派提供方缺席时仍然可用，并在该实例卸载时移除。Web 与 Desktop preset 为 spawn 启用发现和路由字段，为 fork 保持两者关闭。允许模型选择的委派工具在显式选择路由时、发现工具在每次调用时读取 Host 的 `/model-selection-settings` 服务，因此设置编辑会对所有运行中、已恢复和子 Session 的下一次调用生效。启用时，发现和显式选择允许其精确路由列表。设置关闭或未挂载时，只允许父 Agent 当前生效的 provider/model 及其支持的强度。启用但路由列表为空、格式无效或重复时，读取该设置的每次调用都会抛出错误码为 `INVALID_MODEL_SELECTION_SETTINGS` 的 `SubagentError`。普通委派和关闭模型选择的工具不读取路由列表；Host 设置关闭时也不读取该列表。Session 不记录授权；忽略早期的 `subagent/model-selection-policy` 事件。路由字段要求后端公布 `agentOptions`；进程内 Spawn、Fork 和 DSH SDK 满足条件，ACP、Codex 和 Claude Code 会使挂载失败。
 
 一次调用需同时提供 `provider` 与 `model`；`reasoning_effort` 要求同一次调用包含这两个字段。仅指定强度的调用会在查询路由或创建子级之前被拒绝。省略全部三个字段时，保留配置的子级默认值与现有回退行为。静态的 `provider.agentRouteDefaults` 在存在时构成提供方／模型基线；工具配置与模型字段会在路由相关强度合并和确切路由预检前覆盖它。没有这些默认值的提供方会使用父 agent 最新已记录请求中的兼容值，再使用父级首次请求前的创建选项，并保留配置的 `maxTokens`。显式提供提供方／模型组合但省略强度时，会清除配置及继承的强度，即使路由未变，也由所选模型解析自己的默认值。实时 LLM 适配器在创建子 agent 前校验有效路由。目录成员资格只提供建议，因此适配器接受时，模型可以使用未列出的 id。
+
+<a id="routing-advice"></a>
+#### 路由建议
+
+设置 `modelAdvice: true` 后，未指定路由的委派由已挂载的路由插件选择子级路由。当模型与 `agentOptions` 都未指定路由时，调用会以委派 Agent、工具名、后端提供方、标签、任务文本、可选 preset 与调用信号派发 [`subagent/model-advice`](../subagent/README.zh.md#routing-advice) waterfall。顾问由外向内执行，第一个建议生效；整条链都不作答时，保留配置的默认路由。建议只是建议，不授予任何权限：工具按与显式选择相同的授权校验它，未授权的路由以 `MODEL_ROUTE_NOT_ALLOWED` 拒绝，而不是静默回退。与默认委派路由相同的建议不需要额外授权，因为普通委派本来就把子级运行在那里。
+
+调用、`agentOptions` 或提供方的 `agentRouteDefaults` 指定的路由属于既定决定，因此不会请求建议。`modelAdvice` 独立于 `modelSelection`——只有后者向模型公开路由字段：fork 工具可以在不公开选择字段的情况下接受路由建议，其子级仍继承对话前缀。路由改变时，父级继承的推理强度会被清除，与显式更改路由的行为一致。
 
 -----
 
@@ -139,7 +147,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-生成的默认 [`subagent` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-subagent) 在提供方存在时以配置的工具名公开。设置了 `modelSelection` 的实例在每个 Session 中都会增加 `provider`、`model`、`reasoning_effort`。`provider` 的描述告诉模型仅在任务需要其他模型时才设置这些字段，并说明省略时使用的路由：父级当前模型和推理强度，或工具或后端配置的默认值。同一实例启用 `modelDiscovery` 时，它还指明 provider id 取自 `list_subagent_models`。`allowedAgentPresets` 增加 `agent_preset` 枚举及默认或继承选择的引导。上下文继承和继续执行能力决定任务与后续工作描述。Agent 限制同时作用于继承自 preset 的委派工具的 schema、执行入口和指导文本，恢复历史 `toolFilter` 覆盖时也相同；同级 Agent 不受影响。preset 选择提示仅依赖工具配置，因此不依赖其他 preset 的声明顺序。
+生成的默认 [`subagent` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-subagent) 在提供方存在时以配置的工具名公开。设置了 `modelSelection` 的实例在每个 Session 中都会增加 `provider`、`model`、`reasoning_effort`。`provider` 的描述告诉模型仅在任务需要其他模型时才设置这些字段，并说明省略时使用的路由：父级当前模型和推理强度，或工具或后端配置的默认值，或在启用 `modelAdvice` 时由委派解析出的模型与强度。同一实例启用 `modelDiscovery` 时，它还指明 provider id 取自 `list_subagent_models`。`allowedAgentPresets` 增加 `agent_preset` 枚举及默认或继承选择的引导。上下文继承和继续执行能力决定任务与后续工作描述。Agent 限制同时作用于继承自 preset 的委派工具的 schema、执行入口和指导文本，恢复历史 `toolFilter` 覆盖时也相同；同级 Agent 不受影响。preset 选择提示仅依赖工具配置，因此不依赖其他 preset 的声明顺序。
 
 #### Token 影响
 
@@ -243,7 +251,7 @@ Delegation depth for `subagent`: current 1, maximum 1, remaining levels 0. Do no
 - **本工具不等待结果**——使用完成通知或子任务消息。程序化结果等待由 subagent 服务提供。
 - **预设选项不含描述**——`agent_preset` 只公开 id 及默认或继承提示。schema 不读取候选预设文档，因此注册不依赖它们的声明顺序。请使用能够表达各候选用途的 id。
 - **预设引用在委派时检查**——Host 挂载和预设内挂载的工具都在启动子级时解析目标。目标可以在工具注册后声明或替换，因此加载工具无法确定后续调用时目标是否可用。拼错或不可用的 id 在被选中前不会被发现；选中它的调用会返回错误。
-- **随附 fork 工具省略模型选择**：其配置保持 `modelSelection` 关闭，以保留对继承前缀的复用。自定义 fork 工具可以启用它，并接受与其他委派工具相同的 Host 授权和适配器校验。
+- **随附 fork 工具省略模型选择**：其配置保持 `modelSelection` 关闭，以保留对继承前缀的复用。自定义 fork 工具可以启用它，并接受与其他委派工具相同的 Host 授权和适配器校验。`modelAdvice` 是 fork 可用的替代方案：它不公开路由字段也能为子级选路由，但建议的路由一旦改变，仍会使提供方无法复用继承的前缀。
 - **深度上限按实例固定** — 更换上限需要另一个不同名称的工具。子级角色和工具由所选 Agent Preset 配置。显式 LLM 选择需要 `modelSelection`，并受调用时 Host 设置授权的路由限制，设置关闭时只允许当前父级路由。
 
 <a id="dev-note"></a>

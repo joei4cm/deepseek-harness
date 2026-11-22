@@ -75,6 +75,13 @@ kind: "package-reference"
 
 进程内 spawn 接受独立的 `agentPreset`；fork 与外部后端拒绝此选项。省略选择时，本地子级加入父方当前的 preset 代际。显式 id 挂载当前可用代际，即使该 id 与父方相同。通过 [`dsh-tool-subagent`](../tool-subagent/README.zh.md#selecting-a-child-preset) 配置模型可选项，并在 [preset 组装](../../preset/agent-preset-registry/README.zh.md)中配置 persona 与工具。冷恢复保留历史子级 descriptor 记录的 persona 和工具限制。
 
+<a id="routing-advice"></a>
+### 路由建议
+
+按任务选择模型的插件监听 `subagent/model-advice`。委派工具在为路由尚未确定的子级创建之前派发该 waterfall。请求携带委派 Agent、工具名、后端提供方、显示标签、任务文本、可选 preset 与调用信号。监听者返回 `{ provider, model }` 为该子级选路，或调用 `next()` 把决定留给其余顾问；第一个建议生效，整条链都不作答时保留配置的路由。
+
+这条链只提供建议，不构成授权：派发的消费方会用管辖显式子级选择的同一份设置复查每个建议，因此顾问只能在用户已允许的路由中选择，fork 子级也仍保留对话继承。[`dsh-tool-subagent`](../tool-subagent/README.zh.md#routing-advice) 是随附的消费方，只有它的 `modelAdvice` 选项开启时才派发该链。
+
 ### 消息、中断与发现
 
 `sendMessage()` 允许在线根和驻留的可继续子代理，按 Session id 联系同一棵树中的任意其他根或可继续成员。目标在下一步接收 Steer 输入，或在空闲时开始轮次。仅在 subagent 树根下恢复冷目标，其创建祖先保持离线；消息保留实际发送者。`rootOf()` 解析调用方的在线根。Agent 中断要求祖先权限。浏览器提示词和用户中断仅按子 Session 寻址；Gateway 在任何副作用之前检查该 Session 上对应操作的权限。父级或 global 授权不意味着子级访问权。提示词要求 subagent 树根在线；创建者可以离线。用户中断不恢复目标，目标缺席时接受为无操作。提示词选择 Queue 或 Steer，经附件存储接受图片批次；不兼容的目标模型拒绝图片。`listDescendants()` 通过父级拥有的 `subagentCatalog` 投影递归发现成员。它保留目录顺序，每个可达 Session 读取一次，跳过外部叶子，并报告不可读分支而不激活 Agent。

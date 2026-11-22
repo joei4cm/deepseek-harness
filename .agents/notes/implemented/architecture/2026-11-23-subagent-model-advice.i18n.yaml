@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for 2026-11-23-subagent-model-advice.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-23-subagent-model-advice.md
+/agent-note-subagent-model-advice:
+  en: 2910e16b61bfaa50
+  zh: 5b912b75741310c8
+/agent-note-subagent-model-advice/problem:
+  en: 18fdde45d0b22d66
+  zh: 30ffc861117940b0
+/agent-note-subagent-model-advice/decision:
+  en: 5e4e9c17714470ae
+  zh: bb0063a5c14ff144
+/agent-note-subagent-model-advice/alternatives-considered:
+  en: 6119e2aff3b6be5a
+  zh: 6119e2aff3b6be5a
+/agent-note-subagent-model-advice/alternatives-considered/why-not-extend-modelselection:
+  en: 0ea1ef70a2d3f8fc
+  zh: 795ea9084a565f85
+/agent-note-subagent-model-advice/alternatives-considered/why-not-a-service-registry:
+  en: 481ae3f5ee6e6f69
+  zh: 359e976c3d3c6efc
+/agent-note-subagent-model-advice/alternatives-considered/why-not-let-advice-bypass-the-allowlist-or-apply-it-inside-startactivation:
+  en: 6ce9ce1f2b2b959d
+  zh: 936afb921c68307f
+/agent-note-subagent-model-advice/alternatives-considered/why-not-have-the-model-name-the-route-every-time:
+  en: 0420725f64498509
+  zh: fec984b546a89888
+/agent-note-subagent-model-advice/consequences:
+  en: 3f32c3103a6a6106
+  zh: 4ea50af674d821fc
+/agent-note-subagent-model-advice/testing:
+  en: 0958469372566129
+  zh: 670e83df88b7ff77

@@ -205,6 +205,40 @@ export interface ResolvedSubagentStartRequest extends SubagentStartRequest {
 }
 
 /**
+ * One delegation awaiting an advisory child LLM route, carrying what a routing
+ * plugin may read: the delegating agent, the tool and backend that will create
+ * the child, and the task the child is about to receive.
+ */
+export interface SubagentModelAdviceRequest {
+  /** The delegating agent; its current route is the default the advice overrides. */
+  readonly parent: Agent
+  /** Model-facing name of the delegation tool that accepts the call. */
+  readonly toolName: string
+  /** Registered subagent provider backing that tool. */
+  readonly provider: string
+  /** Short display label supplied for the task. */
+  readonly label: string
+  /** Initial task text, exactly as supplied to the child. */
+  readonly prompt: string
+  /** Independently selected Agent Preset, when the call named one. */
+  readonly agentPreset?: string
+  /** Delegation cancellation, owning the advice request until it settles. */
+  readonly signal: AbortSignal
+}
+
+/**
+ * An advisory child LLM route. Advice never grants authority: the consumer
+ * checks it against the same authorization that governs explicit child model
+ * selection, and the selected model resolves its own default reasoning effort.
+ */
+export interface SubagentModelAdvice {
+  /** Registered LLM provider id. */
+  readonly provider: string
+  /** Exact model id owned by that provider. */
+  readonly model: string
+}
+
+/**
  * What the continuation manager asks a provider for while materializing one
  * continuable child's FIRST activation. The manager has already reserved the
  * durable child identity and owns every later operation, so this request

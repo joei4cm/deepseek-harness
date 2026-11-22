@@ -104,6 +104,13 @@ export function modelSelectionSetupAgent(ctx: Context): Agent {
   return agent
 }
 
+/** Return the real parent Agent created by any {@link setup}. */
+export function setupAgent(ctx: Context): Agent {
+  const agent = setupAgents.get(ctx)
+  if (agent === undefined) throw new Error('context has no setup Agent')
+  return agent
+}
+
 let callCounter = 0
 
 /** Execute the registered subagent tool through the real ToolRuntime pipeline. */

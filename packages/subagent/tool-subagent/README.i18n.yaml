@@ -18,8 +18,8 @@
   en: 76236371849f929c
   zh: 341fb5d40fdb6d36
 /deepseek-ai-dsh-tool-subagent/use-this-package/minimal-configuration:
-  en: 1a23808ca32b8f2d
-  zh: e637a35220da0564
+  en: db167b1430f9b833
+  zh: fa0ed5646f205cdd
 /deepseek-ai-dsh-tool-subagent/use-this-package/managed-delegation:
   en: 31e50585cfd7e747
   zh: 643d9a9e3643cf55
@@ -27,8 +27,11 @@
   en: e28a206c65151ec0
   zh: 1372242076549ca4
 /deepseek-ai-dsh-tool-subagent/use-this-package/selecting-a-child-llm:
-  en: c8b91471fb12f907
-  zh: 5086e6c62df65b3b
+  en: a8e4a3f06a08ea63
+  zh: 4970b17c6e56729c
+/deepseek-ai-dsh-tool-subagent/use-this-package/selecting-a-child-llm/routing-advice:
+  en: 7305f21e8853e645
+  zh: 6beac344462c6270
 /deepseek-ai-dsh-tool-subagent/understand-the-implementation:
   en: 6ce5f749256a7e6c
   zh: a4f2adb04a70d9cf
@@ -57,8 +60,8 @@
   en: e4c7376d4f29dbd5
   zh: 6b7a9eaf69c9ea53
 /deepseek-ai-dsh-tool-subagent/model-experience/tool-schema/what-the-model-sees:
-  en: 68befd517e6874fb
-  zh: 823c6fc65eadd9a2
+  en: 6077e37a9209cfa5
+  zh: 33914615c4637007
 /deepseek-ai-dsh-tool-subagent/model-experience/tool-schema/token-effect:
   en: b36081ab5c06241f
   zh: 1e784317ee1fb381
@@ -132,8 +135,8 @@
   en: f5d5f97a153f7c70
   zh: 3d6bc05b9eadfbc2
 /deepseek-ai-dsh-tool-subagent/known-limitations-and-deferred-work:
-  en: 5e62d35a22719e99
-  zh: a2bdcf6ef7e40fa4
+  en: f1bbc4adcbb6e38f
+  zh: a537cdc3f603d291
 /deepseek-ai-dsh-tool-subagent/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

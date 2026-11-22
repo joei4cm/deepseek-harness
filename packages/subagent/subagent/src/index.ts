@@ -58,6 +58,8 @@ import type {
   SubagentActivationSpec,
   SubagentInterruptAuthority,
   SubagentMemberNames,
+  SubagentModelAdvice,
+  SubagentModelAdviceRequest,
   SubagentProvider,
   SubagentRunEndInfo,
   SubagentRunInfo,
@@ -90,6 +92,8 @@ export type {
   SubagentActivationSpec,
   SubagentInterruptAuthority,
   SubagentMemberNames,
+  SubagentModelAdvice,
+  SubagentModelAdviceRequest,
   SubagentProvider,
   SubagentResult,
   SubagentRun,
@@ -166,6 +170,21 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'subagent/end'(this: Scoped<SubagentRuntime>, info: SubagentRunEndInfo): void
+    /**
+     * Suggest the child LLM route for one delegation before that child is
+     * created. The delegation tool dispatches it when neither the call nor the
+     * tool configuration names a route, and applies the first suggestion; a
+     * suggestion is advisory, so the tool then checks it against the same
+     * authorization that governs explicit child model selection and rejects it
+     * when disallowed. Call `next()` to leave the route to the remaining advisors.
+     * @param request - the delegation awaiting a child route.
+     * @param next - delegate to the next advisor.
+     * @mode waterfall
+     */
+    'subagent/model-advice'(
+      request: SubagentModelAdviceRequest,
+      next: () => Promise<SubagentModelAdvice | undefined>,
+    ): Promise<SubagentModelAdvice | undefined>
   }
 }
 

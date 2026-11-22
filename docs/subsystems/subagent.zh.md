@@ -675,6 +675,29 @@ Types: [Scoped](scope.zh.md)
 
 Source: [`packages/subagent/subagent/src/index.ts`](../../packages/subagent/subagent/src/index.ts)
 
+<a id="subagentmodel-advice--waterfall"></a>
+
+#### `subagent/model-advice` — waterfall
+
+Suggest the child LLM route for one delegation before that child is created. The delegation tool dispatches it when neither the call nor the tool configuration names a route, and applies the first suggestion; a suggestion is advisory, so the tool then checks it against the same authorization that governs explicit child model selection and rejects it when disallowed. Call `next()` to leave the route to the remaining advisors.
+
+```ts cordis-catalog
+/**
+ * Suggest the child LLM route for one delegation before that child is
+ * created. The delegation tool dispatches it when neither the call nor the
+ * tool configuration names a route, and applies the first suggestion; a
+ * suggestion is advisory, so the tool then checks it against the same
+ * authorization that governs explicit child model selection and rejects it
+ * when disallowed. Call `next()` to leave the route to the remaining advisors.
+ * @param request - the delegation awaiting a child route.
+ * @param next - delegate to the next advisor.
+ * @mode waterfall
+ */
+'subagent/model-advice'( request: SubagentModelAdviceRequest, next: () => Promise<SubagentModelAdvice | undefined>, ): Promise<SubagentModelAdvice | undefined>
+```
+
+Source: [`packages/subagent/subagent/src/index.ts`](../../packages/subagent/subagent/src/index.ts)
+
 <a id="subagentprovider-added--emit"></a>
 
 #### `subagent/provider-added` — emit

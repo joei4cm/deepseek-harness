@@ -4078,7 +4078,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 - `inject`: `workingDirectory` · `sessionProjections`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/subagent/subagent/src/index.ts:188`](../packages/subagent/subagent/src/index.ts)
+- `source`: [`packages/subagent/subagent/src/index.ts:207`](../packages/subagent/subagent/src/index.ts)
 
 ```ts config-catalog
 /** Host configuration for continuable subagent capacity. */
@@ -5044,7 +5044,7 @@ export interface Config {
 
 - `inject`: `tools` · `subagents` · `systemPrompt`
 - `refs`: [`AgentOptions`](subsystems/core.zh.md)
-- `source`: [`packages/subagent/tool-subagent/src/index.ts:46`](../packages/subagent/tool-subagent/src/index.ts)
+- `source`: [`packages/subagent/tool-subagent/src/index.ts:49`](../packages/subagent/tool-subagent/src/index.ts)
 
 ```ts config-catalog
 /** Config: which registered provider this tool delegates to, plus child defaults. */
@@ -5062,6 +5062,16 @@ export interface Config extends PresetSelectionConfig {
    * Host setting, or restricts explicit selection to the current parent route.
    */
   modelSelection?: boolean
+  /**
+   * Ask mounted routing plugins for each child's LLM route through the
+   * `subagent/model-advice` chain when neither the call nor `agentOptions`
+   * names one. The suggestion stays advisory: this tool checks it against the
+   * same authorization as explicit selection and refuses a route the Host
+   * setting does not allow. Independent of `modelSelection`, so a fork tool can
+   * take routing advice without exposing route fields to the model. Requires
+   * provider `agentOptions` support.
+   */
+  modelAdvice?: boolean
   /**
    * Register the shared `list_subagent_models` tool for this scope.
    * Enable on only one instance per scope; defaults to false and does not

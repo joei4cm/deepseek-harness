@@ -6079,6 +6079,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'info', description: 'run identity, durable direct creator `parentSessionId`, and terminal outcome.' }],
   },
   {
+    name: 'subagent/model-advice',
+    mode: 'waterfall',
+    signature: '\'subagent/model-advice\'( request: SubagentModelAdviceRequest, next: () => Promise<SubagentModelAdvice | undefined>, ): Promise<SubagentModelAdvice | undefined>',
+    summary: 'Suggest the child LLM route for one delegation before that child is created.',
+    description: 'Suggest the child LLM route for one delegation before that child is created. The delegation tool dispatches it when neither the call nor the tool configuration names a route, and applies the first suggestion; a suggestion is advisory, so the tool then checks it against the same authorization that governs explicit child model selection and rejects it when disallowed. Call `next()` to leave the route to the remaining advisors.',
+    parameters: [{ name: 'request', description: 'the delegation awaiting a child route.' }, { name: 'next', description: 'delegate to the next advisor.' }],
+  },
+  {
     name: 'subagent/provider-added',
     mode: 'emit',
     signature: '\'subagent/provider-added\'(provider: SubagentProvider): void',
@@ -10805,6 +10813,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubagentMemberNames',
     declaration: 'export interface SubagentMemberNames {\n    readonly self: string;\n    readonly parent?: string;\n}',
+  },
+  {
+    name: 'SubagentModelAdvice',
+    declaration: 'export interface SubagentModelAdvice {\n    readonly provider: string;\n    readonly model: string;\n}',
+  },
+  {
+    name: 'SubagentModelAdviceRequest',
+    declaration: 'export interface SubagentModelAdviceRequest {\n    readonly parent: Agent;\n    readonly toolName: string;\n    readonly provider: string;\n    readonly label: string;\n    readonly prompt: string;\n    readonly agentPreset?: string;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'SubagentPromptReceipt',

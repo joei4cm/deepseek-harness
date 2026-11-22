@@ -5,6 +5,7 @@ import type { ReasoningEffortId } from '@deepseek-ai/dsh-llm/types'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { AgentOptions } from '@deepseek-ai/dsh-agent'
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
+import type { SubagentModelAdvice } from '@deepseek-ai/dsh-subagent'
 import { ToolArgsError, ToolContextUnavailableError } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
 
@@ -154,6 +155,24 @@ export function requestedAgentOptions(
 }
 
 /**
+ * Whether the current authorization permits one exact child route.
+ * @param policy - Current Host allowlist; omission permits only the current parent route.
+ * @param parentOptions - Current parent route used when the Host setting is disabled or absent.
+ * @param route - Exact provider/model pair to check.
+ * @returns Whether the route may be used for a child.
+ */
+export function isAllowedModelRoute(
+  policy: ModelSelectionPolicy | undefined,
+  parentOptions: AgentOptions,
+  route: AllowedModelRoute,
+): boolean {
+  const { provider, model } = route
+  return policy === undefined
+    ? provider === parentOptions.provider && model === parentOptions.model
+    : policy.routes.some(route => route.provider === provider && route.model === model)
+}
+
+/**
  * Enforce Host authorization for a complete, explicitly selected child route.
  * @param policy - Current Host allowlist; omission permits only the current parent route.
  * @param parentOptions - Current parent route used when the Host setting is disabled or absent.
@@ -168,13 +187,40 @@ export function assertAllowedModelSelection(
   routeDiscoveryVisible: boolean,
 ): void {
   const { provider, model } = route
-  const allowed = policy === undefined
-    ? provider === parentOptions.provider && model === parentOptions.model
-    : policy.routes.some(route => route.provider === provider && route.model === model)
-  if (allowed) return
+  if (isAllowedModelRoute(policy, parentOptions, route)) return
   throw new SubagentError(`child LLM route "${provider}/${model}" is not allowed by the current subagent model selection setting`
     + (policy === undefined
       ? '; while subagent model selection is disabled, explicit selection is limited to the parent route'
+      : '')
+    + '.' + (routeDiscoveryVisible ? ROUTE_DISCOVERY_HINT : ''), 'MODEL_ROUTE_NOT_ALLOWED')
+}
+
+/**
+ * Enforce the same authorization for a route proposed by a model advisor. The
+ * suggestion is refused loudly instead of being dropped, so a routing plugin
+ * whose rules the current setting does not authorize is visible to the caller.
+ * @param policy - Current Host allowlist; omission permits only the current parent route.
+ * @param parentOptions - Current parent route used when the Host setting is disabled or absent.
+ * @param route - route proposed by the `subagent/model-advice` chain.
+ * @param routeDiscoveryVisible - Whether the caller can call `list_subagent_models`;
+ *   the rejection then points to it.
+ * @throws {SubagentError} `MODEL_ROUTE_NOT_ALLOWED` when the allowlist excludes the route.
+ */
+export function assertAdvisedModelRoute(
+  policy: ModelSelectionPolicy | undefined,
+  parentOptions: AgentOptions,
+  route: AllowedModelRoute,
+  routeDiscoveryVisible: boolean,
+): void {
+  // Advice that reproduces the default delegation route needs no allowance:
+  // ordinary delegation already runs the child there.
+  const isParentRoute = route.provider === parentOptions.provider && route.model === parentOptions.model
+  if (isParentRoute || isAllowedModelRoute(policy, parentOptions, route)) return
+  const { provider, model } = route
+  throw new SubagentError(`the delegation model advisor suggested child LLM route "${provider}/${model}", `
+    + 'which the current subagent model selection setting does not allow'
+    + (policy === undefined
+      ? '; while that setting is disabled, an advised route is limited to the parent route'
       : '')
     + '.' + (routeDiscoveryVisible ? ROUTE_DISCOVERY_HINT : ''), 'MODEL_ROUTE_NOT_ALLOWED')
 }
@@ -220,4 +266,19 @@ export async function preflightChildLlmRoute(
     model,
     ...reasoningEffort === undefined ? {} : { reasoningEffort },
   }, signal)
+}
+
+/**
+ * Merge an advised route over the delegation's child options. The advised model
+ * resolves its own reasoning effort: a changed route drops the parent's effort
+ * in child-option merging, while an unchanged route keeps it.
+ * @param configured - Child options already resolved for this call.
+ * @param advice - Route proposed by the `subagent/model-advice` chain.
+ * @returns Child options carrying the advised provider and model.
+ */
+export function advisedAgentOptions(
+  configured: AgentOptions | undefined,
+  advice: SubagentModelAdvice,
+): AgentOptions {
+  return { ...configured, provider: advice.provider, model: advice.model }
 }

@@ -22,6 +22,8 @@ import {
 } from '@deepseek-ai/dsh-subagent'
 import type { SubagentProvider } from '@deepseek-ai/dsh-subagent'
 import {
+  advisedAgentOptions,
+  assertAdvisedModelRoute,
   delegationModelRequest,
   hasConfiguredLlmSelection,
   hasDelegationModelRequest,
@@ -29,6 +31,7 @@ import {
   requestedAgentOptions,
 } from './model-selection.ts'
 import type { DelegationModelRequest } from './model-selection.ts'
+import { adviseChildRoute } from './model-advice.ts'
 import { registerListSubagentModels } from './list-models.ts'
 import { SubagentPresetSelection, type PresetSelectionConfig, type PresetSelectionRequest } from './preset-selection.ts'
 // Retains the released Session event declaration in emitted declarations.
@@ -58,6 +61,16 @@ export interface Config extends PresetSelectionConfig {
    */
   modelSelection?: boolean
   /**
+   * Ask mounted routing plugins for each child's LLM route through the
+   * `subagent/model-advice` chain when neither the call nor `agentOptions`
+   * names one. The suggestion stays advisory: this tool checks it against the
+   * same authorization as explicit selection and refuses a route the Host
+   * setting does not allow. Independent of `modelSelection`, so a fork tool can
+   * take routing advice without exposing route fields to the model. Requires
+   * provider `agentOptions` support.
+   */
+  modelAdvice?: boolean
+  /**
    * Register the shared `list_subagent_models` tool for this scope.
    * Enable on only one instance per scope; defaults to false and does not
    * enable model selection. Discovery is removed when this instance unloads.
@@ -84,6 +97,7 @@ export const Config: z<Config> = z.object({
   provider: z.string().required(),
   toolName: z.string().default('subagent'),
   modelSelection: z.boolean().default(false),
+  modelAdvice: z.boolean().default(false),
   modelDiscovery: z.boolean().default(false),
   // Prevent Schemastery from materializing omitted agentOptions as `{}`.
   agentOptions: z.object({
@@ -162,6 +176,7 @@ export function apply(ctx: Context, config: Config): void {
   const toolName = config.toolName ?? 'subagent'
 
   const modelSelectionEnabled = config.modelSelection === true
+  const modelAdviceEnabled = config.modelAdvice === true
 
   const assertSubagentProviderConfiguration = (subagentProvider: SubagentProvider): void => {
     presets.assertProvider(subagentProvider)
@@ -179,6 +194,11 @@ export function apply(ctx: Context, config: Config): void {
     if (modelSelectionEnabled && !subagentProvider.capabilities.agentOptions) {
       throw new Error(
         `tool-subagent: provider "${subagentProvider.name}" does not support child model selection`,
+      )
+    }
+    if (modelAdviceEnabled && !subagentProvider.capabilities.agentOptions) {
+      throw new Error(
+        `tool-subagent: provider "${subagentProvider.name}" does not support child model advice`,
       )
     }
   }
@@ -202,7 +222,9 @@ export function apply(ctx: Context, config: Config): void {
     const providerRouteDefaults = subagentProvider.agentRouteDefaults
     const defaultRoute = providerRouteDefaults !== undefined || hasConfiguredLlmSelection(config.agentOptions)
       ? 'the default model configured for this tool'
-      : 'your current model and reasoning effort'
+      : modelAdviceEnabled
+        ? 'the model and reasoning effort this delegation resolves to'
+        : 'your current model and reasoning effort'
     // Discovery visibility is per Agent; only a same-instance owner is known to exist at mount.
     const providerSource = config.modelDiscovery === true ? ' Use a provider id listed by `list_subagent_models`.' : ''
     const definition = defineTool({
@@ -277,30 +299,54 @@ export function apply(ctx: Context, config: Config): void {
 
         const agentPreset = presets.resolve(args as PresetSelectionRequest)
         const modelRequest = delegationModelRequest(args as DelegationModelRequest)
-        const routes = modelSelectionEnabled && hasDelegationModelRequest(modelRequest)
+        const requestedRoute = hasDelegationModelRequest(modelRequest)
+        const requiresRoutePreflight = requestedRoute || hasConfiguredLlmSelection(config.agentOptions)
+        const configuredChildAgentOptions = requiresRoutePreflight && providerRouteDefaults !== undefined
+          ? { ...providerRouteDefaults, ...config.agentOptions }
+          : config.agentOptions
+        // A route the call, the tool configuration, or the backend itself names
+        // is a decision, not a default, so it is not open to advice.
+        const advice = modelAdviceEnabled && providerRouteDefaults === undefined && !requestedRoute
+          && !hasConfiguredLlmSelection(configuredChildAgentOptions)
+          ? await adviseChildRoute(ctx, {
+            parent,
+            toolName,
+            provider: config.provider,
+            label: args.description,
+            prompt: args.prompt,
+            ...agentPreset === undefined ? {} : { agentPreset },
+            signal: exec.signal,
+          })
+          : undefined
+        const routes = (modelSelectionEnabled && requestedRoute) || advice !== undefined
           ? ctx.get('subagentModelSelection')?.allowedRoutes()
           : undefined
         const modelSelectionPolicy = routes === undefined ? undefined : { routes }
         const parentOptions = parentAgentOptionsForDelegation(parent)
-        const requiresRoutePreflight = hasDelegationModelRequest(modelRequest)
-          || hasConfiguredLlmSelection(config.agentOptions)
-        const configuredChildAgentOptions = requiresRoutePreflight && providerRouteDefaults !== undefined
-          ? { ...providerRouteDefaults, ...config.agentOptions }
-          : config.agentOptions
-        const requestedChildAgentOptions = requestedAgentOptions(
+        const routeDiscoveryVisible = ctx.tools.get('list_subagent_models', parent, exec.toolSet) !== undefined
+        const selectedChildAgentOptions = requestedAgentOptions(
           configuredChildAgentOptions,
           modelRequest,
           modelSelectionEnabled,
           modelSelectionPolicy,
           parentOptions,
-          ctx.tools.get('list_subagent_models', parent, exec.toolSet) !== undefined,
+          routeDiscoveryVisible,
         )
-        if (requiresRoutePreflight) {
+        if (advice !== undefined) {
+          assertAdvisedModelRoute(modelSelectionPolicy, parentOptions, advice, routeDiscoveryVisible)
+        }
+        const requestedChildAgentOptions = advice === undefined
+          ? selectedChildAgentOptions
+          : advisedAgentOptions(selectedChildAgentOptions, advice)
+        if (requiresRoutePreflight || advice !== undefined) {
           const llm = ctx.get('llm')
           if (llm === undefined) {
             throw new ToolContextUnavailableError('cannot resolve the selected child LLM route because the `llm` service is unavailable')
           }
-          const inheritParentReasoningEffort = providerRouteDefaults === undefined && !hasDelegationModelRequest(modelRequest)
+          const adviceChangedRoute = advice !== undefined
+            && (advice.provider !== parentOptions.provider || advice.model !== parentOptions.model)
+          const inheritParentReasoningEffort = providerRouteDefaults === undefined && !requestedRoute
+            && !adviceChangedRoute
           await preflightChildLlmRoute(
             llm,
             parentOptions,
