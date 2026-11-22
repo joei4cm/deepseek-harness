@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用 `ctx.tokenMeter` 估算会话当前的请求与上下文压力，或为单条消息计价。测量会回放持久会话日志，结果确定且不进行模型调用，因此压缩、占用显示与遥测可以共享同一结果。该服务依赖会话投影；消费方可以读取 `tokenUsage`、`contextPressure` 与 `contextBreakdown`；文本和没有图片定价的路由采用近似的固定启发式规则，存在声明时应用视觉 token 定价，文件则按模型可见的句柄文本计价。只有请求 envelope 完全相同时才复用提供方报告的用量；本包不添加模型可见内容，也不在 loop 中做决策。
+使用 `ctx.tokenMeter` 估算会话当前的请求与上下文压力，或为单条消息计价。测量会回放持久会话日志，结果确定且不进行模型调用，因此压缩、占用显示与遥测可以共享同一结果。该服务依赖会话投影；消费方可以读取 `tokenUsage`、`contextPressure` 与 `contextBreakdown`；文本和没有图片定价的路由采用近似的分语言启发式规则，存在声明时应用视觉 token 定价，文件则按模型可见的句柄文本计价。只有请求 envelope 完全相同时才复用提供方报告的用量；本包不添加模型可见内容，也不在 loop 中做决策。
 
 ## 目录
 
@@ -29,18 +29,18 @@ kind: "package-reference"
 
 ### 何时选择
 
-当多个插件应该就同一种基于回放的测量达成一致时选择它——压缩规划、占用 UI 与压力检查都读取同一个 fold。测量回放持久会话日志，因此确定、无需模型调用，并精确反映已记录内容。文本和未声明图片定价的路由使用固定启发式规则；当部署需要精确到计费级别的计数时，使用提供方分词器。
+当多个插件应该就同一种基于回放的测量达成一致时选择它——压缩规划、占用 UI 与压力检查都读取同一个 fold。测量回放持久会话日志，因此确定、无需模型调用，并精确反映已记录内容。文本和未声明图片定价的路由使用分语言启发式规则；当部署需要精确到计费级别的计数时，使用提供方分词器。
 
 ### 测量压力
 
-`ctx.tokenMeter` 暴露两个操作。`measure(session, requestHeader?)` 在同一个已消费日志 revision 上返回独立、深度不可变的快照：`totalTokens` 是请求与响应压力，`surfaceTokens` 是仅表面的路由定价总量，等于 `nodes[].tokens` 之和。可选 `requestHeader` 覆盖会选择计价路由与压力字段；节点集合仍描述当前会话。`estimateMessage(message)` 用固定启发式规则为一条消息计价。每次调用都会克隆带位置的表面节点，因此测量是 O(surface)。
+`ctx.tokenMeter` 暴露两个操作。`measure(session, requestHeader?)` 在同一个已消费日志 revision 上返回独立、深度不可变的快照：`totalTokens` 是请求与响应压力，`surfaceTokens` 是仅表面的路由定价总量，等于 `nodes[].tokens` 之和。可选 `requestHeader` 覆盖会选择计价路由与压力字段；节点集合仍描述当前会话。`estimateMessage(message)` 用分语言启发式规则为一条消息计价。每次调用都会克隆带位置的表面节点，因此测量是 O(surface)。
 
 ```text
 const { totalTokens, surfaceTokens, nodes } = ctx.tokenMeter.measure(session)
 const price = ctx.tokenMeter.estimateMessage(message)
 ```
 
-每次测量都会通过可选的 `llm` 服务解析生效 envelope 的提供方／模型。适配器声明图片定价时，图片出现处使用路由请求的视觉 token 价格加模型可见文本，`image/offload` 事件选中的出现位置则按路由的占位文本计价，与表层实际发送的一致；其他路由保持固定启发式规则。文件出现处使用同一个 `llm` 服务为适配器分发解析的确切、与路由无关的 句柄文本，其中包含当前执行世界路径或明确的无路径说明。每个节点还携带与路由无关的 `heuristicTokens`，供替换影子价使用。只有当最新成功调用的规范请求 envelope 与已测量 envelope 匹配、且其总量不低于该调用完整路由定价锚点时，才复用提供方用量；否则会对完整当前 envelope 与表面做估算。表面变更保持相对于按同一路由重新定价的匹配锚点的带符号值，包括缩减替换后的负 delta。
+每次测量都会通过可选的 `llm` 服务解析生效 envelope 的提供方／模型。适配器声明图片定价时，图片出现处使用路由请求的视觉 token 价格加模型可见文本，`image/offload` 事件选中的出现位置则按路由的占位文本计价，与表层实际发送的一致；其他路由保持分语言启发式规则。文件出现处使用同一个 `llm` 服务为适配器分发解析的确切、与路由无关的 句柄文本，其中包含当前执行世界路径或明确的无路径说明。每个节点还携带与路由无关的 `heuristicTokens`，供替换影子价使用。只有当最新成功调用的规范请求 envelope 与已测量 envelope 匹配、且其总量不低于该调用完整路由定价锚点时，才复用提供方用量；否则会对完整当前 envelope 与表面做估算。表面变更保持相对于按同一路由重新定价的匹配锚点的带符号值，包括缩减替换后的负 delta。
 
 测量锚点包含成功的 `assistant/message` 之前的已计价表面，包括 `step/start` 之后接纳的系统与用户消息，以及重试之前执行的替换。持久输出未变时，完成调用的表面增量为零：其提示词已包含在提供方用量中。后续表面变更仍是相对于该锚点的带符号增量。
 
@@ -48,9 +48,9 @@ const price = ctx.tokenMeter.estimateMessage(message)
 
 token-meter 通过必需的 `ctx.sessionProjections` 服务注册三个客户端投影单元和一个仅供宿主使用的单元。Host 消费方调用 `ctx.tokenMeter.contextPressure(session)` 同步读取提供方报告的最新提示词规模和路由容量；注册句柄保留在内部。`tokenUsage` 携带完整持久日志中的 `uncachedInputTokens`、`outputTokens`、`cacheReadTokens` 与 `cacheWriteTokens`。最终 assistant 消息样本会替换同一次尝试的流式用量；`llm/retry-started` 会结束该替换范围，因此同一步骤中的重试会贡献另一次计费用量。`contextPressure` 携带可选 `pressureTokens`（提供方报告的最新提示词规模）、可选 `projectedTokens`（下一个请求的提示词将花费多少）与来自最新一条 `request/context` 记录的可选 `contextWindow`。`contextBreakdown` 携带启发式 `systemTokens`、`toolsTokens` 与 `messageTokens`——上下文的构成，而非提供方计费规模。卸载插件会移除全部四个键。仅宿主使用的 `tokenMeasurement` 保存请求头引用、未结束的步骤，以及最近一次成功调用的用量和输出价格。它不保存消息数组、工具定义、附件数据或价格缓存。计量历史有误时，只记录首次失败的位置，其他投影更新和检查点仍可继续；`measure()` 在该事件处报告原有错误，不提交价格或推进读取位置。状态版本 2 会丢弃旧版计量记录，再从日志重建。
 
-图片省略重新计算现有节点的价格，同时保留此前的用量锚点。固定引用启发式规则不计入 `offloaded` 元数据，因此一次省略决定不改变 `contextBreakdown` 或标量启发式总量，按路由的测量则把所选图片的视觉价格换成占位文本价格。
+图片省略重新计算现有节点的价格，同时保留此前的用量锚点。引用启发式规则不计入 `offloaded` 元数据，因此一次省略决定不改变 `contextBreakdown` 或标量启发式总量，按路由的测量则把所选图片的视觉价格换成占位文本价格。
 
-`contextBreakdown` 把 所有非空且存活的 `system/message` 归入 `systemTokens`；休眠的空节点不贡献 token，没有非空系统消息时为零。`messageTokens` 包含其余所有可见节点。在追加、已计量的压缩与裁剪、系统提示词改写或清空之后，两者之和等于 `measure().nodes[].heuristicTokens`；对非系统范围的未计量替换以零增量折叠，与 `contextPressure` 相同。`toolsTokens` 跟随最新 `request/header`。三个数字都使用固定启发式规则，而非路由图片定价或文件句柄投影；它们是近似构成，不是计费数据或 `projectedTokens`。
+`contextBreakdown` 把 所有非空且存活的 `system/message` 归入 `systemTokens`；休眠的空节点不贡献 token，没有非空系统消息时为零。`messageTokens` 包含其余所有可见节点。在追加、已计量的压缩与裁剪、系统提示词改写或清空之后，两者之和等于 `measure().nodes[].heuristicTokens`；对非系统范围的未计量替换以零增量折叠，与 `contextPressure` 相同。`toolsTokens` 跟随最新 `request/header`。三个数字都使用分语言启发式规则，而非路由图片定价或文件句柄投影；它们是近似构成，不是计费数据或 `projectedTokens`。
 
 `deriveTurnTokenUsage(events)` 为浏览器消费方把一个完整轮次折叠为精确的逐次尝试与整轮用量。生命周期证据缺失、计数不安全或精确总量矛盾时不返回结果；只有每次参与的尝试都报告可选缓存、推理或路由值时，相应汇总才会出现。
 
@@ -65,7 +65,22 @@ token-meter 通过必需的 `ctx.sessionProjections` 服务注册三个客户端
 
 ### 解读数字
 
-占用是参考数字，不是计费记录：harness 中没有任何机制依据它做决定，压缩读取的是 `measure()`。UI 用测量压力除以所选模型独立解析的容量来计算占用。`contextBreakdown` 数字是估算值，其总和不会等于 `projectedTokens`；后者的提供方锚点恰好携带启发式误差——CJK 文本与 JSON schema 在每 token 四字符下严重低估。
+占用是参考数字，不是计费记录：harness 中没有任何机制依据它做决定，压缩读取的是 `measure()`。UI 用测量压力除以所选模型独立解析的容量来计算占用。`contextBreakdown` 数字是估算值，其总和不会等于 `projectedTokens`；后者的提供方锚点恰好携带启发式误差。
+
+### 按语言的 token 密度
+
+文本按其书写语言的密度计价。同一条启发式规则服务所有消费方，因此这些密度是实测得到的，而不是按提供方分别调参：
+
+| 字符 | 每字符 token 数 | 实测依据 |
+|---|---|---|
+| ASCII | 0.25 | 散文 4.6–5.1 字符/token，源码 2.9–4.2，JSON 2.5–4.1 |
+| CJK 表意文字、假名、谚文 | 0.65 | 1.7–1.8 字符/token |
+| CJK 标点、全角形式 | 1.0 | 1.3 字符/token |
+| 其他非 ASCII | 0.4 | 西里尔文 3.0 字符/token，带重音拉丁文 3.4 |
+
+数值来自 DeepSeek-V3 的字节级 BPE 分词器与本机由 llama.cpp 分词的 Qwen3.5 模型，样本覆盖英文散文、源码、JSON 与本仓库自己的中文文档；两个分词器的结果相差在 5% 以内。ASCII 保持每 token 四字符，因为源码与 JSON——agent 会话上下文中占比最大的部分——的实测值是 2.9 至 4.2 字符/token，而英文散文是 4.6 至 5.1。
+
+在本仓库译文文档的 690 万字符中文散文上，估算器与 DeepSeek-V3 的计数相差不到 1%，与 Qwen3.5 相差不到 4%。旧的固定密度把同一段文本少计了 47%。
 
 -----
 
@@ -88,7 +103,7 @@ token-meter 通过必需的 `ctx.sessionProjections` 服务注册三个客户端
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `TokenMeter` 服务：回放状态、fold、`measure()` 与 `estimateMessage()` |
-| [`src/estimate.ts`](src/estimate.ts) | 固定启发式规则：每 token 四字符加块与角色开销 |
+| [`src/estimate.ts`](src/estimate.ts) | 分语言启发式规则：按字符类别取密度，加块与角色开销 |
 | [`src/measurement-projection.ts`](src/measurement-projection.ts) | 固定大小的宿主恢复信息，不含逐节点缓存 |
 | [`src/surface-fold.ts`](src/surface-fold.ts) | 与 `measure()` 共享的位置表面 fold |
 | [`src/surface-projection.ts`](src/surface-projection.ts) | O(1) 投影单元的影价协议 |
@@ -140,7 +155,7 @@ token-meter 通过必需的 `ctx.sessionProjections` 服务注册三个客户端
 
 这些限制说明计量在哪里停止、由未来工作接续。它们是当前包约束，不是通用 token 计量对比或任务积压。
 
-- **固定启发式规则是近似值**——没有可复用提供方用量的文本按字符数加结构开销计价，而非精确提供方分词器或请求序列化器；只有声明了定价的路由上的图片出现处携带提供方精确的视觉 token。
+- **启发式规则是近似值**——没有可复用提供方用量的文本按其书写语言的密度加结构开销计价，而非精确提供方分词器或请求序列化器；只有声明了定价的路由上的图片出现处携带提供方精确的视觉 token。
 - **价格缓存为空时可扫描完整日志**——固定大小检查点恢复计量信息，不恢复逐节点价格或旧锚点的消息。请求头内容随价格缓存一起重建；热读取不增加日志访问。测量恢复仍可能读取检查点之前的日志。请求头引用与按日志重建的缓存不符时，会丢弃该缓存，从头执行原有计算。
 - **每次测量都克隆当前表面**——连贯不可变快照让读取为 O(surface)，包括低于阈值的压力检查。
 - **提供方用量只在规范 envelope 完全相同时可复用**——工具、提供方、模型或调用配置变化会刻意回退到完整启发式估算；系统提示词变更在下一次成功调用之前按带符号的表面增量计量。
@@ -155,9 +170,10 @@ token-meter 通过必需的 `ctx.sessionProjections` 服务注册三个客户端
 
 本开发备注是不具权威性的工作上下文：维护者备注与开放问题。已交付的行为与既定理由以上文、包代码和相关 Agent Note 为准。
 
-- 固定每 token 四字符启发式规则会低估 CJK 文本与 JSON schema；复用用量时提供方锚点恰好携带该误差，请把构成行呈现为近似构成，绝不呈现为总量。
-- 按提供方的精确分词器尚未决定；保持单一确定性启发式规则，正是让每个消费方的测量一致且回放稳定的原因。
+- 启发式规则按各语言自身的密度计价，因此复用用量时提供方锚点恰好携带残余误差：中文散文与提供方计数相差 4% 以内，纯 CJK 文本相差 15% 以内，ASCII 源码相差 6% 以内，ASCII 散文高估约 22%，JSON 与工具输出少计约 20%。请把构成行呈现为近似构成，绝不呈现为总量。
+- 按提供方的精确分词器尚未决定；保持单一确定性启发式规则，正是让每个消费方的测量一致且回放稳定的原因。各语言密度改为对照两个已公开的分词器实测得到，而非逐提供方调参。
+- 把 ASCII 再拆成字母、数字、标点与空白已经实测并未采纳：它会改变每一个 ASCII 数值，却只换来约一个百分点的平均精度，因为 JSON 标点与英文散文把 ASCII 费率拉向相反方向。
 
 </details>
 
-用量 fold 在每次尝试内替换样本，总量不必单调。构成和测量共享位置替换规划器与固定估算器，因此启发式 surface 总量按构造一致。路由定价总量有意与之不同。
+用量 fold 在每次尝试内替换样本，总量不必单调。构成和测量共享位置替换规划器与同一个估算器，因此启发式 surface 总量按构造一致。路由定价总量有意与之不同。

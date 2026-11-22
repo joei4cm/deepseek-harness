@@ -54,6 +54,7 @@ import type { CredentialInfo } from '@deepseek-ai/dsh-credentials/types'
 import type { DirectoryListing as FixtureDirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
 import type { SettingsDescribeValue, SettingsNamespaceView } from '@deepseek-ai/dsh-settings/types'
 import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session/surface'
+import { estimateMessage, estimateSystemMessage, estimateToolsTokens } from '@deepseek-ai/dsh-token-meter/estimate'
 import type {
   ClientConnectionRpc, ConnectionRpcFailure, ConnectionRpcResult, RpcResult,
 } from '@deepseek-ai/dsh-client-connection/client'
@@ -1445,28 +1446,6 @@ interface FixtureContextBreakdownProjection {
   messageTokens: number
 }
 
-/** Fixed token-meter heuristic constants mirrored by this client-only fixture. */
-const CHARS_PER_TOKEN = 4
-const BLOCK_OVERHEAD = 4
-const ROLE_OVERHEAD = 4
-
-/** Price fixture content with token-meter's fixed-density heuristic. */
-function estimateFixtureContent(blocks: readonly ContentBlock[]): number {
-  const densityPrice = (value: string): number => Math.ceil(value.length / CHARS_PER_TOKEN)
-  return blocks.reduce((tokens, block) => {
-    if (block.type === 'text' || block.type === 'reasoning') {
-      return tokens + densityPrice(block.text) + BLOCK_OVERHEAD
-    }
-    if (block.type === 'tool-call') {
-      return tokens + densityPrice(block.name) + densityPrice(block.arguments) + BLOCK_OVERHEAD
-    }
-    // ContentBlockMap is merge-extensible: this client graph sees only the base
-    // members, but fixture turns can carry add/remove blocks at runtime, so the
-    // structural JSON fallback below is live code.
-    return tokens + densityPrice(JSON.stringify(block)) + BLOCK_OVERHEAD
-  }, 0)
-}
-
 /**
  * Fixture parallel of token-meter's heuristic context-composition projection.
  * The system prompt is the system-role surface node; it prices as text plus
@@ -1485,20 +1464,14 @@ function contextBreakdownOf(log: readonly SessionEvent[]): FixtureContextBreakdo
     const message = deriveEventMessage(event)
     if (message === null) continue
     if (message.role === 'system') {
-      const characters = message.content.reduce(
-        (total, block) => total + (block.type === 'text' ? block.text.length : JSON.stringify(block).length),
-        0,
-      )
-      systemTokens = Math.ceil(characters / CHARS_PER_TOKEN) + ROLE_OVERHEAD
+      systemTokens = estimateSystemMessage(message)
       continue
     }
-    messageTokens += estimateFixtureContent(message.content) + ROLE_OVERHEAD
+    messageTokens += estimateMessage(message)
   }
   return {
     systemTokens,
-    toolsTokens: header?.tools === undefined || header.tools.length === 0
-      ? 0
-      : Math.ceil(JSON.stringify(header.tools).length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD,
+    toolsTokens: estimateToolsTokens(header),
     messageTokens,
   }
 }

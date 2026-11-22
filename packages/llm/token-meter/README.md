@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use `ctx.tokenMeter` to estimate a session's current request and context pressure or price one message. Measurements replay the durable session log, remain deterministic, and make no model calls, so compaction, occupancy displays, and telemetry can share one result. The service requires session projections; consumers can read `tokenUsage`, `contextPressure`, and `contextBreakdown`; text and routes without image pricing use an approximate fixed heuristic, declared visual-token pricing applies when available, and files are priced as model-visible handle text. Provider-reported usage is reused only for an identical request envelope; the package adds no model-visible content and makes no loop decisions.
+Use `ctx.tokenMeter` to estimate a session's current request and context pressure or price one message. Measurements replay the durable session log, remain deterministic, and make no model calls, so compaction, occupancy displays, and telemetry can share one result. The service requires session projections; consumers can read `tokenUsage`, `contextPressure`, and `contextBreakdown`; text and routes without image pricing use an approximate script-aware heuristic, declared visual-token pricing applies when available, and files are priced as model-visible handle text. Provider-reported usage is reused only for an identical request envelope; the package adds no model-visible content and makes no loop decisions.
 
 ## Table of Contents
 
@@ -29,18 +29,18 @@ Mount this plugin when a consumer needs token or context pressure for compaction
 
 ### When to choose it
 
-Choose it when several plugins should agree on one replay-based measurement — compaction planning, occupancy UIs, and pressure checks all read the same fold. The measurements replay the durable session log, so they are deterministic, cost no model calls, and reflect exactly what is logged. Text and undeclared image routes use a fixed heuristic; reach for a provider tokenizer when a deployment needs exact billing-grade counts.
+Choose it when several plugins should agree on one replay-based measurement — compaction planning, occupancy UIs, and pressure checks all read the same fold. The measurements replay the durable session log, so they are deterministic, cost no model calls, and reflect exactly what is logged. Text and undeclared image routes use a script-aware heuristic; reach for a provider tokenizer when a deployment needs exact billing-grade counts.
 
 ### Measuring pressure
 
-`ctx.tokenMeter` exposes two operations. `measure(session, requestHeader?)` returns a detached, deeply immutable snapshot at one consumed-log revision: `totalTokens` is request-and-response pressure, and `surfaceTokens` is the surface-only route-priced total equal to the sum of `nodes[].tokens`. An optional `requestHeader` override selects the priced route and pressure fields; the node set still describes the current session. `estimateMessage(message)` prices one message with the fixed heuristic. Every call clones the positional surface nodes, so measurement is O(surface).
+`ctx.tokenMeter` exposes two operations. `measure(session, requestHeader?)` returns a detached, deeply immutable snapshot at one consumed-log revision: `totalTokens` is request-and-response pressure, and `surfaceTokens` is the surface-only route-priced total equal to the sum of `nodes[].tokens`. An optional `requestHeader` override selects the priced route and pressure fields; the node set still describes the current session. `estimateMessage(message)` prices one message with the script-aware heuristic. Every call clones the positional surface nodes, so measurement is O(surface).
 
 ```text
 const { totalTokens, surfaceTokens, nodes } = ctx.tokenMeter.measure(session)
 const price = ctx.tokenMeter.estimateMessage(message)
 ```
 
-Each measurement resolves the effective envelope's provider/model through the optional `llm` service. Image occurrences use the routed request's visual-token price plus model-visible text when the adapter declares pricing, and occurrences selected by an `image/offload` event are priced as the route's placeholder text exactly as the surface sends them; other routes keep the fixed heuristic. File occurrences use the exact route-independent handle text that the same `llm` service resolves for adapter dispatch, including its current execution-world path or explicit no-path message. Each node also carries route-independent `heuristicTokens` for replacement shadow prices. Provider usage is reused only when the latest successful call's canonical request envelope matches the measured envelope and its total is no lower than that call's full route-priced anchor; otherwise the complete current envelope and surface are estimated. Surface changes stay signed relative to a matching anchor repriced under the same route, including negative deltas after shrinking replacements.
+Each measurement resolves the effective envelope's provider/model through the optional `llm` service. Image occurrences use the routed request's visual-token price plus model-visible text when the adapter declares pricing, and occurrences selected by an `image/offload` event are priced as the route's placeholder text exactly as the surface sends them; other routes keep the script-aware heuristic. File occurrences use the exact route-independent handle text that the same `llm` service resolves for adapter dispatch, including its current execution-world path or explicit no-path message. Each node also carries route-independent `heuristicTokens` for replacement shadow prices. Provider usage is reused only when the latest successful call's canonical request envelope matches the measured envelope and its total is no lower than that call's full route-priced anchor; otherwise the complete current envelope and surface are estimated. Surface changes stay signed relative to a matching anchor repriced under the same route, including negative deltas after shrinking replacements.
 
 The measurement anchor includes the priced surface immediately before the successful `assistant/message`, including system and user messages admitted after `step/start` and replacements made before a retry. With unchanged durable output, the completed call has zero surface delta: its prompt is already included in provider usage. Later surface changes remain signed deltas against that anchor.
 
@@ -48,9 +48,9 @@ The measurement anchor includes the priced surface immediately before the succes
 
 Token-meter registers three client-view projection units and one host-only unit through its required `ctx.sessionProjections` service. Host consumers call `ctx.tokenMeter.contextPressure(session)` to read the latest provider-reported prompt size and route capacity synchronously; the registration handle stays private. `tokenUsage` carries the complete durable log's `uncachedInputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`. A final assistant-message sample replaces streaming usage from the same attempt; `llm/retry-started` ends that replacement scope, so a retry in the same step contributes another billed attempt. `contextPressure` carries optional `pressureTokens` (the newest provider-reported prompt size), optional `projectedTokens` (what the next request's prompt would cost), and optional `contextWindow` from the newest `request/context` record. `contextBreakdown` carries heuristic `systemTokens`, `toolsTokens`, and `messageTokens` — the context's composition, not its provider-billed size. Unloading the plugin removes all four keys. The host-only `tokenMeasurement` state saves header references, the open step, and the latest successful call's usage and output price. It contains no message arrays, tool schemas, attachment data, or price caches. Invalid measurement history records only its first failed position; unrelated projection updates and checkpoints continue. `measure()` reports the original error at that event, before committing prices or advancing its cursor. State version 2 discards older measurement rows and rebuilds from the journal.
 
-Image offload reprices existing node identities while preserving prior usage anchors. The fixed reference heuristic excludes `offloaded` metadata, so an offload decision does not change `contextBreakdown` or the scalar heuristic total; route-aware measurement replaces the selected visual prices with placeholder text.
+Image offload reprices existing node identities while preserving prior usage anchors. The reference heuristic excludes `offloaded` metadata, so an offload decision does not change `contextBreakdown` or the scalar heuristic total; route-aware measurement replaces the selected visual prices with placeholder text.
 
-`contextBreakdown` classifies all nonempty surviving `system/message` nodes as `systemTokens`; empty dormant nodes contribute nothing, and no nonempty system means zero. `messageTokens` includes every other visible node. Their sum equals `measure().nodes[].heuristicTokens` after appends, metered compaction and pruning, and system-prompt rewrites or clearing; an unmetered replacement of a non-system range folds at zero delta, like `contextPressure`. `toolsTokens` follows the latest `request/header`. All three use the fixed heuristic, not route image pricing or file-handle projection; they are approximate composition, not billing or `projectedTokens`.
+`contextBreakdown` classifies all nonempty surviving `system/message` nodes as `systemTokens`; empty dormant nodes contribute nothing, and no nonempty system means zero. `messageTokens` includes every other visible node. Their sum equals `measure().nodes[].heuristicTokens` after appends, metered compaction and pruning, and system-prompt rewrites or clearing; an unmetered replacement of a non-system range folds at zero delta, like `contextPressure`. `toolsTokens` follows the latest `request/header`. All three use the script-aware heuristic, not route image pricing or file-handle projection; they are approximate composition, not billing or `projectedTokens`.
 
 `deriveTurnTokenUsage(events)` folds one complete turn into exact per-attempt and whole-turn usage for browser consumers. It returns no result when lifecycle evidence is missing, counts are unsafe, or exact totals conflict; each corresponding aggregate appears only when every participating attempt reports its optional cache, reasoning, or route value.
 
@@ -65,7 +65,22 @@ Both plugins have usable defaults. The meter consumes only the optional `llm` se
 
 ### Reading the numbers
 
-Occupancy is a reference figure, not a billing record: nothing in the harness makes decisions from it, and compaction reads `measure()` instead. A UI computes occupancy by dividing measured pressure by the separately resolved capacity for the selected model. The `contextBreakdown` figures are estimates that will not sum to `projectedTokens`, whose provider anchor carries exactly the heuristic error — CJK text and JSON schemas underprice badly at four characters per token.
+Occupancy is a reference figure, not a billing record: nothing in the harness makes decisions from it, and compaction reads `measure()` instead. A UI computes occupancy by dividing measured pressure by the separately resolved capacity for the selected model. The `contextBreakdown` figures are estimates that will not sum to `projectedTokens`, whose provider anchor carries exactly the heuristic error.
+
+### Token density by script
+
+Text prices by the density of the script it is written in. One heuristic serves every consumer, so the densities are measured rather than tuned per provider:
+
+| Characters | Tokens per character | Measured against |
+|---|---|---|
+| ASCII | 0.25 | 4.6–5.1 characters per token in prose, 2.9–4.2 in source, 2.5–4.1 in JSON |
+| CJK ideographs, kana, Hangul | 0.65 | 1.7–1.8 characters per token |
+| CJK punctuation, fullwidth forms | 1.0 | 1.3 characters per token |
+| Other non-ASCII | 0.4 | 3.0 characters per token in Cyrillic, 3.4 in accented Latin |
+
+The figures come from the DeepSeek-V3 byte-level BPE tokenizer and from a local Qwen3.5 model tokenized by llama.cpp, over English prose, source, JSON, and this repository's own Chinese documentation; the two tokenizers agree within 5%. ASCII keeps four characters per token because source and JSON — the largest share of an agent session's context — run at 2.9 to 4.2 characters per token, while English prose runs at 4.6 to 5.1.
+
+Over the 6.9 million characters of Chinese prose in this repository's translated documentation, the estimator lands within 1% of the DeepSeek-V3 count and within 4% of the Qwen3.5 count. Under the previous fixed density, the same text was priced 47% below it.
 
 -----
 
@@ -88,7 +103,7 @@ Provider usage anchors a measurement only when its canonical envelope matches an
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | The `TokenMeter` service: replay state, fold, `measure()` and `estimateMessage()` |
-| [`src/estimate.ts`](src/estimate.ts) | The fixed heuristic: four characters per token plus block and role overhead |
+| [`src/estimate.ts`](src/estimate.ts) | The script-aware heuristic: a density per character class plus block and role overhead |
 | [`src/measurement-projection.ts`](src/measurement-projection.ts) | Fixed-size host recovery facts; no positional caches |
 | [`src/surface-fold.ts`](src/surface-fold.ts) | The positional surface fold shared with `measure()` |
 | [`src/surface-projection.ts`](src/surface-projection.ts) | Shadow-price protocol for the O(1) projection units |
@@ -140,7 +155,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 These limits define where the measurement stops and future work begins. They are current package constraints, not a general token-accounting comparison or a task backlog.
 
-- **The fixed heuristic is approximate** — text without reusable provider usage is priced by character count plus structural overhead, not an exact provider tokenizer or request serializer; only image occurrences on routes with declared pricing carry provider-exact visual tokens.
+- **The heuristic is approximate** — text without reusable provider usage is priced by the density of the script it is written in plus structural overhead, not an exact provider tokenizer or request serializer; only image occurrences on routes with declared pricing carry provider-exact visual tokens.
 - **A cold price cache can scan the complete log** — the fixed-size checkpoint restores measurement facts, not positional prices or the old anchor's messages. Header payloads are rebuilt with the price cache; warm reads need no new history access. Measurement recovery can still read the log prefix. A header reference that does not match the rebuilt journal cache discards that cache and repeats the original calculation from the beginning.
 - **Every measurement clones the current surface** — coherent immutable snapshots make reads O(surface), including below-threshold pressure checks.
 - **Provider usage is only reusable for an identical canonical envelope** — tools, provider, model, or call-config changes deliberately fall back to full heuristic estimation; system-prompt changes are signed surface deltas until the next successful call.
@@ -155,9 +170,10 @@ These limits define where the measurement stops and future work begins. They are
 
 This Dev Note is non-authoritative working context: notes for maintainers and open questions. Shipped behavior and accepted rationale live in the sections above, the package code, and the linked Agent Notes.
 
-- The fixed four-characters-per-token heuristic underprices CJK text and JSON schemas; the provider anchor carries exactly that error when usage is reused. Present the composition rows as an approximate composition, never as a total.
-- A per-provider exact tokenizer is not decided; keeping one deterministic heuristic is what makes every consumer's measurement agree and replay-stable.
+- The heuristic prices each script at its own density, so the provider anchor carries that residual error when usage is reused: Chinese prose within 4% of the provider's count and pure CJK text within 15%, ASCII source within 6%, ASCII prose over by about 22%, and JSON and tool output under by about 20%. Present the composition rows as an approximate composition, never as a total.
+- A per-provider exact tokenizer is not decided; keeping one deterministic heuristic is what makes every consumer's measurement agree and replay-stable. The per-script densities are measured against two published tokenizers instead of tuned per provider.
+- Splitting ASCII further, into letters, digits, punctuation, and whitespace, was measured and not adopted: it moves every ASCII figure for under a point of mean accuracy, because JSON punctuation and prose pull the ASCII rate in opposite directions.
 
 </details>
 
-Usage folds replace samples within each attempt; totals need not be monotone. Composition and measurement share the positional replacement planner and fixed estimator, so their heuristic surface totals agree by construction. Route-priced totals deliberately differ.
+Usage folds replace samples within each attempt; totals need not be monotone. Composition and measurement share the positional replacement planner and the same estimator, so their heuristic surface totals agree by construction. Route-priced totals deliberately differ.

@@ -9,8 +9,8 @@
   en: e51cc1114d193318
   zh: f45cbb692bc8de69
 /deepseek-ai-dsh-token-meter/summary:
-  en: 7f5142b836b0338a
-  zh: 2735005241e2aae2
+  en: cc4236e6656f00a8
+  zh: 4cd65496a7b8e096
 /deepseek-ai-dsh-token-meter/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -18,20 +18,23 @@
   en: 5907ef1472773a47
   zh: 06f1e988290a32c6
 /deepseek-ai-dsh-token-meter/use-this-package/when-to-choose-it:
-  en: e8c4cd1e945f86ba
-  zh: 133c1f1a85179d30
+  en: 5ffbfe80b011064b
+  zh: 593b0af02b3c1429
 /deepseek-ai-dsh-token-meter/use-this-package/measuring-pressure:
-  en: 58de3b364ab5af6b
-  zh: c5440af43d321e56
+  en: 1839a8cfe7459c14
+  zh: 2146b08ec3f983a4
 /deepseek-ai-dsh-token-meter/use-this-package/session-projections:
-  en: 00104e9572634840
-  zh: 635c96b280a59a9e
+  en: 2d7e72041b334894
+  zh: c19dbea26c313656
 /deepseek-ai-dsh-token-meter/use-this-package/composition:
   en: 1a0b7f49e01cba08
   zh: 666213a1024767c5
 /deepseek-ai-dsh-token-meter/use-this-package/reading-the-numbers:
-  en: 7950203e0c146123
-  zh: 4fe421b2268f12a9
+  en: 5672b2c29b4664bd
+  zh: fbf2bdd05bc75cf6
+/deepseek-ai-dsh-token-meter/use-this-package/token-density-by-script:
+  en: c0dbcc525b7060a2
+  zh: 21811e921da44f84
 /deepseek-ai-dsh-token-meter/understand-the-implementation:
   en: 9630d7e26193a512
   zh: 94222c2a487c4b8c
@@ -39,8 +42,8 @@
   en: 6b046d9d3bce7483
   zh: 5d3a62f785757842
 /deepseek-ai-dsh-token-meter/understand-the-implementation/source-map:
-  en: aac2e9f658341c2f
-  zh: 98c5da95d1b55115
+  en: 6f0fae5e0800f93b
+  zh: 2c2f343ecdc07988
 /deepseek-ai-dsh-token-meter/understand-the-implementation/fold-flow:
   en: c97959d84cf8a1a4
   zh: f17570caa42a1a8e
@@ -57,8 +60,8 @@
   en: 40294c1c31b74824
   zh: c2284876b56d2dbc
 /deepseek-ai-dsh-token-meter/known-limitations-and-deferred-work:
-  en: 4866aeeed470fc89
-  zh: cbbd4b641a979d4d
+  en: 87e4bb779697c2a0
+  zh: bda90867d9bbb423
 /deepseek-ai-dsh-token-meter/known-limitations-and-deferred-work/dev-note:
-  en: 50b57427bfda172e
-  zh: 48d666dcc8c7290f
+  en: da5f255d44928c04
+  zh: f0d5b87563b8e7a9

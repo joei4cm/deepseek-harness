@@ -542,9 +542,10 @@ class TwoWindowAdapter extends LlmAdapter {
 
 describe('summary route after a switch to a model that undercounts in the estimate', () => {
   /**
-   * Four `big` turns of CJK text: the fixed heuristic prices the history near
-   * 2,000 tokens, below the 3,200-token `small` threshold, so the switch check
-   * admits the request, while `small` counts about 8,000 tokens and rejects it.
+   * Four `big` turns of CJK text: the script-aware heuristic prices the history
+   * near 2,900 tokens, below the 3,200-token `small` threshold, so the switch
+   * check admits the request, while `small` counts one token per character and
+   * rejects the 4,340-character prompt.
    */
   async function switchedHistory(maxOverflowRetries: number): Promise<{
     ctx: Context
@@ -565,7 +566,7 @@ describe('summary route after a switch to a model that undercounts in the estima
       agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
       await agent.whenIdle()
     }
-    for (let turn = 0; turn < 4; turn += 1) await prompt('上下文'.repeat(667))
+    for (let turn = 0; turn < 4; turn += 1) await prompt('上下文'.repeat(360))
     adapter.requests.length = 0
     agent.model.select({ provider: 'small', model: 'small' })
     return { ctx, adapter, compact, agent, prompt }
