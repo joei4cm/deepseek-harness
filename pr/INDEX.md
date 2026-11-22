@@ -4,6 +4,6 @@ This branch holds pull-request descriptions that are ready to open but are not o
 
 | File | Branch with the change | Base | References |
 |---|---|---|---|
-| [`01-token-meter-script-aware-density.md`](01-token-meter-script-aware-density.md) | `fix/token-meter-script-aware-density` (`6f2b94020b`) | upstream `master` `4b399c39a6` (dsh 0.2.3-alpha.2) | `#14096`, `#13906` |
+| `01-token-meter-script-aware-density.md` | `fix/token-meter-script-aware-density` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14096`, `#13906` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.

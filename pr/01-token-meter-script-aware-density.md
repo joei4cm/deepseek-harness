@@ -98,7 +98,7 @@ pnpm run build
 
 pnpm run doc-sync
   run-gates: 41 passed, 2 failed, 0 skipped
-  # 两个失败与 token-meter 无关，且在本分支的基线 4b399c39a6 上同样失败：
+  # 两个失败与 token-meter 无关，且在本分支的基线（dsh-v0.2.3-alpha.2）上同样失败：
   #   tool catalog   —— scripts/gen-tool-catalog.ts 的 TOOL_PACKAGES 未收录 tool-working-directory
   #   package paths  —— 归档的 v0.2.1-alpha.1 升级指南指向 packages/experimental/ptc-runtime-python，
   #                     该目录在基线上已不存在
