@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "本地推理适配",
+    "description": "将 DeepSeek Harness 的模型请求直接路由到默认无密钥的 OpenAI 兼容本地推理服务器。"
+  }
+}

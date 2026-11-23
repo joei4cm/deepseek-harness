@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-本包为测试与演示提供可编脚本的 Messages 兼容 HTTP／SSE（Server-Sent Events）端点，并为原生 SDK 消费方发送具名事件，使其无需提供方密钥即可检验模型提供方的失败与成功。每个已接受的 `/v1/messages` 请求依次消费下一个脚本行为，包括重置、停滞、畸形分片、限流、服务器错误、补全与工具调用。测试作者可以通过 `pnpm run mock:llm` 运行服务器，也可以调用 `startMockLlmServer`，后者会返回捕获的请求供断言使用。带种子的 `random` 行为支持可复现的混合故障压力运行。
+本包为测试与演示提供可编脚本的 Messages 兼容和 OpenAI 兼容 HTTP／SSE（Server-Sent Events）端点，使其无需提供方密钥即可检验提供方故障与补全。每个已接受的 `/v1/messages` 请求依次消费下一个脚本行为，包括重置、停滞、畸形分片、限流、服务器错误、补全与工具调用。测试作者可以通过 `pnpm run mock:llm` 运行 Messages 服务器或调用 `startMockLlmServer`；`startMockOpenAiServer` 提供 `/v1/models` 与流式 `/v1/chat/completions`，并支持可选的 Bearer 鉴权。两个服务器句柄都会公开捕获的请求供断言使用；带种子的 `random` 行为支持可复现的混合故障压力运行。
 
 ## 目录
 
@@ -48,6 +48,10 @@ pnpm dsh --profile headless "test provider recovery"
 ```
 
 仓库脚本将 JSONL 写入 stdout：`ready` 记录携带以 `/v1` 结尾的 base URL 与随机种子，后续请求/结果记录同时命名脚本行为与实际选中的具体行为。本包不公开可安装的二进制命令。
+
+### OpenAI 兼容端点
+
+`startMockOpenAiServer({ models, completion?, apiKey? })` 默认在 loopback 上启动确定性服务器，提供 `GET /v1/models` 和流式 `POST /v1/chat/completions`；返回的句柄包含实际端口、base URL、捕获的请求以及幂等的 `close()`。省略 `apiKey` 时接受无密钥请求；设置后会要求完全匹配的 `Authorization: Bearer <token>` 请求头。
 
 ### 脚本化行为
 
@@ -115,6 +119,7 @@ CLI 公开 `--success-text`、`--partial-text`、`--reasoning-text`、`--chunk-s
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `startMockLlmServer`：listener、行为表、种子随机、遥测（telemetry）、捕获的请求记录 |
+| [`src/openai.ts`](src/openai.ts) | `startMockOpenAiServer`：模型目录、确定性流式补全、可选 Bearer 鉴权 |
 | [`src/cli.ts`](src/cli.ts) | `--sequence` 与时序/内容选项解析、JSONL stdout 遥测 |
 | [`src/bin.ts`](src/bin.ts) | `pnpm run mock:llm` 源入口 |
 

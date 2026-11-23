@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Adaptador de inferência local",
+    "description": "Encaminha as solicitações de modelo do DeepSeek Harness diretamente para servidores de inferência locais compatíveis com OpenAI, sem chave por padrão."
+  }
+}

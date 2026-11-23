@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package gives tests and demos a scriptable Messages-compatible HTTP/SSE endpoint with named events for native SDK consumers, so they can exercise model-provider failures and successes without a provider key. Each accepted `/v1/messages` request consumes the next scripted behavior, including resets, stalls, malformed chunks, rate limits, server errors, completions, and tool calls. Test authors can run it with `pnpm run mock:llm` or call `startMockLlmServer`, which returns captured requests for assertions. Seeded `random` behavior supports reproducible mixed-failure stress runs.
+This package gives tests and demos scriptable Messages-compatible and OpenAI-compatible HTTP/SSE endpoints, so they can exercise provider failures and completions without a provider key. Each accepted `/v1/messages` request consumes the next scripted behavior, including resets, stalls, malformed chunks, rate limits, server errors, completions, and tool calls. Test authors can run the Messages server with `pnpm run mock:llm` or call `startMockLlmServer`; `startMockOpenAiServer` serves `/v1/models` and streamed `/v1/chat/completions` with optional Bearer authentication. Both server handles expose captured requests for assertions, and seeded `random` behavior supports reproducible mixed-failure stress runs.
 
 ## Table of Contents
 
@@ -48,6 +48,10 @@ pnpm dsh --profile headless "test provider recovery"
 ```
 
 The repository script writes JSONL to stdout: a `ready` record carries the `/v1` base URL and random seed, followed by request/result records that name both the scripted behavior and the concrete behavior selected. The package exposes no installable binary.
+
+### OpenAI-compatible endpoints
+
+`startMockOpenAiServer({ models, completion?, apiKey? })` starts a deterministic server on loopback by default. It serves `GET /v1/models` and streamed `POST /v1/chat/completions`; the returned handle exposes the bound port, base URL, captured requests, and an idempotent `close()`. Omit `apiKey` for keyless requests or set it to require an exact `Authorization: Bearer <token>` header.
 
 ### Scripting behaviors
 
@@ -115,6 +119,7 @@ The server is built on one rule: each accepted Messages request consumes exactly
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `startMockLlmServer`: listener, behavior table, seeded randomness, telemetry, captured request records |
+| [`src/openai.ts`](src/openai.ts) | `startMockOpenAiServer`: model catalog, deterministic streamed completions, optional Bearer authentication |
 | [`src/cli.ts`](src/cli.ts) | `--sequence` and timing/content option parsing, JSONL stdout telemetry |
 | [`src/bin.ts`](src/bin.ts) | The `pnpm run mock:llm` source entry |
 

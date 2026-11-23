@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Anpassung lokaler Inferenz",
+    "description": "Leitet Modellanfragen von DeepSeek Harness direkt an OpenAI-kompatible lokale Inferenzserver, standardmäßig ohne Schlüssel."
+  }
+}

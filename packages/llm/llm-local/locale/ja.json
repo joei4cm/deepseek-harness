@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "ローカル推論アダプター",
+    "description": "DeepSeek Harness のモデルリクエストを、デフォルトでキー不要の OpenAI 互換ローカル推論サーバーへ直接ルーティングします。"
+  }
+}

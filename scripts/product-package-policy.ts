@@ -44,6 +44,7 @@ export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolic
   'packages/connector/wecom': { category: 'optional', reason: 'Separately installed app plugin that requires wecom-cli and a user-authorized WeCom bot.' },
   'packages/connector/dingtalk': { category: 'optional', reason: 'Separately installed app plugin that downloads dws and requires a DingTalk account in an organization with CLI access.' },
   'packages/context/tmux-context': { category: 'optional', reason: 'Context contribution requiring a tmux pane.' },
+  'packages/llm/llm-local': { category: 'optional', reason: 'Provider adapter mounted by explicitly configured local OpenAI-compatible endpoint routes.' },
   'packages/fs/tool-str-replace-editor': { category: 'optional', reason: 'Explicit alternative to the default filesystem editing tools.' },
   'packages/connector/feishu': { category: 'optional', reason: 'Separately installed app plugin: the Feishu CLI, its skills, and the account operations of a user-authorized Feishu account.' },
   'packages/connector/tencent-meeting': { category: 'optional', reason: 'Separately installed app plugin that requires tmeet and a user-authorized Tencent Meeting account.' },

@@ -2293,6 +2293,52 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-deepseek-api-key -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-local -->
+<a id="deepseek-aidsh-llm-local"></a>
+
+## `@deepseek-ai/dsh-llm-local`
+
+- `inject`: `llm`
+- `refs`: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+- `source`: [`packages/llm/llm-local/src/config.ts:41`](../packages/llm/llm-local/src/config.ts)
+
+```ts config-catalog
+/** Plugin configuration keyed by the provider route selected in model requests. */
+export interface Config {
+  /** Every configured endpoint route. At least one route is required. */
+  providers: Record<string, LocalProviderProfile>
+}
+
+/** Connection and authentication settings for one OpenAI-compatible route. */
+export interface LocalProviderProfile {
+  /** HTTP(S) API root, usually ending in `/v1`. */
+  baseURL: string
+  /** Selector label; defaults to the provider route id. */
+  displayName?: string
+  /** Credential reference resolved for each operation; omission sends no auth header. */
+  apiKeyEnv?: string
+  /** Optional known model metadata overlaid on endpoint discovery. */
+  models?: LocalModelProfile[]
+  /** Maximum provider idle interval per response read. */
+  streamIdleTimeoutMs?: number
+  /** Provider-owned retry policy; omission uses the LLM runtime defaults. */
+  retryPolicy?: RetryPolicyConfig
+}
+
+/** One model's optional selector metadata for a local endpoint. */
+export interface LocalModelProfile {
+  /** Exact model id accepted by the endpoint. */
+  id: string
+  /** Selector label; defaults to {@link id}. */
+  name?: string
+  /** Combined request and response context capacity when known. */
+  contextWindow?: number
+  /** Per-request output cap when known. */
+  maxTokens?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-local -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-pi-ai -->
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
