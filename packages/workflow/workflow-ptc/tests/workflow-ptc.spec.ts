@@ -236,6 +236,7 @@ describe('dsh-workflow-ptc', { timeout: 120_000 }, () => {
       })
       const result = await run(ctx, parent, scripted(`
         const found = await agent('list files', { model: 'deepseek-v4-pro', schema: { type: 'object', properties: { files: { type: 'array', items: { type: 'string' } } }, required: ['files'] } })
+        await agent('list again', { schema: { type: 'object' }, reasoningEffort: 'high' })
         return { first: found.files[0], count: found.files.length }
       `))
       expect(result.stopReason, result.error?.split('\n')[0]).toBe('completed')
@@ -247,6 +248,7 @@ describe('dsh-workflow-ptc', { timeout: 120_000 }, () => {
       })
       expect(provider.runs[0]!.request.agentOptions).toEqual({ model: 'deepseek-v4-pro' })
       expect(provider.runs[0]!.request.parent).toBeDefined()
+      expect(provider.runs[1]!.request.agentOptions).toEqual({ reasoningEffort: 'high' })
     })
 
     it('agent({provider}) forwards provider-only agentOptions through PTC bindings', async () => {
@@ -255,6 +257,31 @@ describe('dsh-workflow-ptc', { timeout: 120_000 }, () => {
 
       expect(result.value).toBe('stub reply')
       expect(provider.runs[0]!.request.agentOptions).toEqual({ provider: 'openai' })
+    })
+
+    it('agent({reasoningEffort}) forwards effort-only agentOptions through PTC bindings', async () => {
+      const { ctx, parent, provider } = await setup()
+      const result = await run(ctx, parent, scripted("return await agent('think harder', { reasoningEffort: 'high' })"))
+
+      expect(result.value).toBe('stub reply')
+      expect(provider.runs[0]!.request.agentOptions).toEqual({ reasoningEffort: 'high' })
+    })
+
+    it('agent({reasoningEffort}) combines with the other route fields', async () => {
+      const { ctx, parent, provider } = await setup()
+      const result = await run(ctx, parent, scripted(
+        "return await agent('route and think', { provider: 'openai', model: 'deepseek-v4-pro', reasoningEffort: 'low' })",
+      ))
+
+      expect(result.value).toBe('stub reply')
+      expect(provider.runs[0]!.request.agentOptions).toEqual({ provider: 'openai', model: 'deepseek-v4-pro', reasoningEffort: 'low' })
+    })
+
+    it('rejects a non-string reasoningEffort like every other scalar option', async () => {
+      const { ctx, parent } = await setup()
+      const result = await run(ctx, parent, scripted("return await agent('x', { reasoningEffort: 4 })"))
+      expect(result.stopReason).toBe('error')
+      expect(result.error).toContain('agent() option "reasoningEffort" must be a string')
     })
 
     it('a start-request provider override selects every child without changing the engine default', async () => {

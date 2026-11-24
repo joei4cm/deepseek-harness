@@ -36,17 +36,24 @@ describe('workflow guest callbacks', () => {
     const test = fixture(`
       phase('Read')
       log('starting')
-      return await agent(args.prompt, { label: 'Answer', provider: 'openai', model: 'small', schema: { type: 'object' } })
+      const answer = await agent(args.prompt, { label: 'Answer', provider: 'openai', model: 'small', reasoningEffort: 'high', schema: { type: 'object' } })
+      await agent('shape it', { schema: { type: 'object' }, reasoningEffort: 'low' })
+      return answer
     `, { childResult: async () => ({ output: [], structured: { answer: 42 }, stopReason: 'completed' }) })
-    await expect(runWorkflowGuest(test.host)).resolves.toEqual({ value: { answer: 42 }, stopReason: 'completed', agentsStarted: 1 })
-    expect(test.requests).toEqual([{ prompt: 'answer this', provider: 'openai', model: 'small', schema: { type: 'object' } }])
+    await expect(runWorkflowGuest(test.host)).resolves.toEqual({ value: { answer: 42 }, stopReason: 'completed', agentsStarted: 2 })
+    expect(test.requests).toEqual([
+      { prompt: 'answer this', provider: 'openai', model: 'small', reasoningEffort: 'high', schema: { type: 'object' } },
+      { prompt: 'shape it', schema: { type: 'object' }, reasoningEffort: 'low' },
+    ])
     expect(test.events).toEqual([
       { type: 'phase', title: 'Read' },
       { type: 'log', message: 'starting' },
       { type: 'agent-start', info: { seq: 1, label: 'Answer', phase: 'Read', childId: 'child-1' } },
       { type: 'agent-end', info: { seq: 1, label: 'Answer', phase: 'Read', childId: 'child-1', outcome: 'completed' } },
+      { type: 'agent-start', info: { seq: 2, label: 'shape it', phase: 'Read', childId: 'child-2' } },
+      { type: 'agent-end', info: { seq: 2, label: 'shape it', phase: 'Read', childId: 'child-2', outcome: 'completed' } },
     ])
-    expect(test.disposed).toEqual([1])
+    expect(test.disposed).toEqual([1, 2])
   })
 
   it('keeps combinator functions inside the VM and maps ordinary stage failures to null', async () => {

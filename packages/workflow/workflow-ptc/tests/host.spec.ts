@@ -132,6 +132,7 @@ describe('workflow host callback validation', () => {
     ['startChild', { prompt: 7 }, 'prompt must be a string'],
     ['startChild', { prompt: 'p', provider: 7 }, 'provider must be a string'],
     ['startChild', { prompt: 'p', model: false }, 'model must be a string'],
+    ['startChild', { prompt: 'p', reasoningEffort: 4 }, 'reasoningEffort must be a string'],
     ['progress', {}, 'requires an array of events'],
     ['progress', [{ type: 'phase', title: null }], 'phase must be a string'],
     ['progress', [{ type: 'agent-start', info: { seq: 0 } }], 'sequence must be a positive integer'],
@@ -190,7 +191,7 @@ describe('workflow runtime outcomes', () => {
     const released = Promise.withResolvers<undefined>()
     const schema = { type: 'object' as const, properties: { answer: { type: 'number' as const } } }
     const { ctx, parent, start } = await setup(async (bindings) => {
-      const child = await bindings.startChild!({ prompt: 'answer', schema, model: 'selected' })
+      const child = await bindings.startChild!({ prompt: 'answer', schema, model: 'selected', reasoningEffort: 'high' })
       expect(child).toEqual({ callId: 1, childId: 'ready-child' })
       expect(await bindings.childResult!(child)).toEqual({ output: [], structured: { answer: 42 }, stopReason: 'completed' })
       await bindings.disposeChild!(child)
@@ -214,7 +215,7 @@ describe('workflow runtime outcomes', () => {
       expect(delegation).toEqual({
         provider: 'stub', label: 'host-test child 1', delivery: 'caller',
         cwd: ctx.workingDirectory.get(parent.session),
-        prompt: [{ type: 'text', text: 'answer' }], outputSchema: schema, agentOptions: { model: 'selected' },
+        prompt: [{ type: 'text', text: 'answer' }], outputSchema: schema, agentOptions: { model: 'selected', reasoningEffort: 'high' },
       })
       released.resolve(undefined)
       await expect(run.result).resolves.toMatchObject({ stopReason: 'completed' })
