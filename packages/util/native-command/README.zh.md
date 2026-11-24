@@ -51,7 +51,7 @@ const { stdout, stderr } = await runNativeCommand('osascript', ['-e', script], s
 
 `revealNativePath(path, signal)` 在 Finder 或文件资源管理器中选中文件，包含 WSL 路径转换；在桌面 Linux 上通过 `xdg-open` 打开上层目录。`nativeFileManager()` 标识该操作，供 UI 根据 Host 选择文案；桌面是否可用仍由独立的 `canOpenNativePath()` 检查决定。调用方必须先授权绝对文件路径，再执行操作。平台分派由注入运行器的测试覆盖；原生桌面验证由对应平台负责。 Explorer 接收独立参数中的编码文件 URI。退出码 1 按已转交请求处理；取消、找不到可执行文件和其他退出码仍然报错。该确认不能证明应用已打开文件，也不能证明桌面窗口已选中文件。
 
-`nativeFileApplications(path, signal)` 返回关联应用、本地化名称、图标和当前默认项。macOS 12 及以上版本使用 LaunchServices，Windows 使用 Shell 关联处理器并在提取前解析打包应用的间接图标引用，Linux 使用 GIO，并共用 XDG 桌面文件和图标读取逻辑。macOS 上 bundle 标识符与显示名都相同的多份拷贝（自更新暂存副本、按版本安装的拷贝）合并为系统默认项，否则保留最高版本；显示名不同的并存安装两项都保留。`openNativeFileApplication(path, application, signal)` 按完整的当前注册列表重新验证关联应用，展示列表中被合并掉的拷贝仍可打开，且不修改系统默认值。Windows 交给 Shell 启动应用，Linux 交给 `gio launch` 展开参数。WSL 转换路径后使用 Windows 适配器。调用方负责验证本地文件路径。原生集成测试分别在相应平台使用独立的 Windows 文件关联和 Linux XDG 目录。
+`nativeFileApplications(path, signal)` 返回关联应用、本地化名称、图标和当前默认项。macOS 12 及以上版本使用 LaunchServices，Windows 使用 Shell 关联处理器并在提取前解析打包应用的间接图标引用，同时从 `%SystemRoot%\System32\WindowsPowerShell\v1.0` 启动适配器的 PowerShell，因此省略系统目录的 `PATH` 也能查询和启动；Linux 使用 GIO，并共用 XDG 桌面文件和图标读取逻辑。macOS 上 bundle 标识符与显示名都相同的多份拷贝（自更新暂存副本、按版本安装的拷贝）合并为系统默认项，否则保留最高版本；显示名不同的并存安装两项都保留。`openNativeFileApplication(path, application, signal)` 按完整的当前注册列表重新验证关联应用，展示列表中被合并掉的拷贝仍可打开，且不修改系统默认值。Windows 交给 Shell 启动应用，Linux 交给 `gio launch` 展开参数。WSL 转换路径后使用 Windows 适配器。调用方负责验证本地文件路径。原生集成测试分别在相应平台使用独立的 Windows 文件关联和 Linux XDG 目录。
 
 -----
 
@@ -111,7 +111,7 @@ Linux 的关联查询和指定应用启动需要 GIO。缺少原生命令时查�
 
 - 命令输出受 Node 的 `execFile` 缓冲上限约束，超过上限时拒绝结果。流式输出由 subprocess 能力处理。
 - Windows 关联处理器的图标只在 Shell 能解析其间接引用时显示；解析失败时回退到处理器的可执行文件，处理器没有给出可执行文件（打包处理器可能只报 AUMID 或家族名）时则没有图标。
-- Windows 文件关联查询仍以裸名启动 `powershell.exe`，WSL 也经 interop `PATH` 解析裸名 `explorer.exe`；`PATH` 缺少 Windows 系统目录时，这些启动会以 `ENOENT` 失败。
+- WSL 经其 interop `PATH` 解析裸名 `explorer.exe` 与 `powershell.exe`；`PATH` 缺少 Windows 系统目录时，这些启动会以 `ENOENT` 失败。
 - Windows 主机需要交互桌面会话。在非交互会话（服务，或没有交互登录的计划任务）中，`explorer.exe` 不调用任何文件关联，且仍在约 1 秒后以退出码 1 返回（Windows 11 ARM64 build 26200 的 SSH session 0 实测），于是「打开」会报告成功却什么都没打开；调用方的 abort 信号把这段等待变成超时而不是挂死。同一目标改用 `Invoke-Item` 命令时可在该会话内解析关联，目录失败也会以非零退出码报出。该会话下的兜底尚未实现。
 
 <a id="dev-note"></a>

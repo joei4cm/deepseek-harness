@@ -12,8 +12,8 @@
  * @module @deepseek-ai/dsh-native-command/path-opener
  */
 
-import { isWsl } from './host-environment.ts'
-import { dirname, extname, win32 } from 'node:path'
+import { isWsl, windowsSystemCommand } from './host-environment.ts'
+import { dirname, extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runNativeCommand, type NativeCommandRunner } from './runner.ts'
 
@@ -122,21 +122,6 @@ function explorerTarget(windowsPath: string): string {
 const WINDOWS_EXPLORER = 'explorer.exe'
 
 /**
- * Resolve the Explorer executable of a Windows host.
- *
- * `%SystemRoot%` is always defined on Windows, but a trimmed `PATH` need not
- * contain `C:\Windows`, where Explorer lives; the bare name then fails to
- * resolve with `ENOENT`. WSL keeps the bare name: its interop resolves
- * Windows executables through the interop path, not through a Windows path.
- * @param env - the Windows host environment.
- * @returns the Explorer executable to spawn.
- */
-function windowsExplorer(env: NodeJS.ProcessEnv): string {
-  const root = env.SystemRoot
-  return root === undefined || root === '' ? WINDOWS_EXPLORER : win32.join(root, 'explorer.exe')
-}
-
-/**
  * Hand one target to Explorer, accepting its delegated-handoff exit code.
  *
  * Explorer exits 1 after handing the request to the desktop process already
@@ -205,7 +190,7 @@ async function openNativePathWithIntent(
   }
 
   if (platform === 'win32') {
-    await openWindowsPath(path, signal, run, windowsExplorer(env))
+    await openWindowsPath(path, signal, run, windowsSystemCommand(env, WINDOWS_EXPLORER))
     return
   }
 
@@ -326,7 +311,7 @@ export async function revealNativePath(
       windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
       if (windowsPath === '') throw new Error('wslpath returned no Windows path')
     } else {
-      command = windowsExplorer(env)
+      command = windowsSystemCommand(env, WINDOWS_EXPLORER)
     }
     await runExplorer(command, ['/select,', explorerTarget(windowsPath)], signal, run)
     return

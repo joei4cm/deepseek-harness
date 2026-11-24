@@ -242,10 +242,11 @@ public static class DshFileAssociations {
  * @param application - registered handler to invoke; null requests the application list.
  * @param signal - caller cancellation.
  * @param run - native command runner.
+ * @param command - the PowerShell executable to spawn.
  * @returns adapter output; query mode emits a JSON array.
  */
 export async function windowsFileApplications(
-  path: string, application: string | null, signal: AbortSignal, run: NativeCommandRunner,
+  path: string, application: string | null, signal: AbortSignal, run: NativeCommandRunner, command: string,
 ): Promise<string> {
   const encodedPath = Buffer.from(path).toString('base64')
   const encodedApplication = Buffer.from(application ?? '').toString('base64')
@@ -266,7 +267,7 @@ ${application === null ? 'ConvertTo-Json -InputObject @([DshFileAssociations]::L
   const scriptPath = join(directory, 'associations.ps1')
   try {
     await writeFile(scriptPath, `\uFEFF${script}`, 'utf8')
-    const result = await run('powershell.exe', [
+    const result = await run(command, [
       '-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', scriptPath,
     ], signal, 'hidden')
     return result.stdout

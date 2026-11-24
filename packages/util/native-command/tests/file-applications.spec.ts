@@ -1,4 +1,5 @@
 /** File association results and explicit handler authorization at the native command adapter. */
+import { win32 } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it, vi, onTestFinished } from 'vitest'
 import * as runner from '../src/runner.ts'
@@ -125,11 +126,11 @@ it('encodes Windows query and invocation data separately from native adapter sou
     return { stdout: JSON.stringify([application]), stderr: '' }
   })
   const path = "C:\\测试\\a'; write-host nope.mp3"
-  expect(await nativeFileApplications(path, signal, { platform: 'win32', run })).toEqual([application])
+  expect(await nativeFileApplications(path, signal, { platform: 'win32', run, env: {} })).toEqual([application])
   expect(scripts[0]!).toContain(Buffer.from(path).toString('base64'))
   expect(scripts[0]!).not.toContain(path)
   expect(scripts[0]!).toContain('::List($path)')
-  await openNativeFileApplication(path, application.id, signal, { platform: 'win32', run })
+  await openNativeFileApplication(path, application.id, signal, { platform: 'win32', run, env: {} })
   expect(scripts[1]!).toContain('::Open($path, $application)')
   expect(run.mock.calls[1]![0]).toBe('powershell.exe')
   expect(run.mock.calls[1]![1]).toEqual(['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', expect.any(String)])
@@ -144,7 +145,7 @@ it('keeps the complete Windows command line below the CreateProcess limit for lo
     `C:\\work\\${'测'.repeat(210)}.txt`,
     `C:\\work\\${'测'.repeat(3000)}.txt`,
   ]
-  for (const path of paths) await nativeFileApplications(path, signal, { platform: 'win32', run })
+  for (const path of paths) await nativeFileApplications(path, signal, { platform: 'win32', run, env: {} })
   const commandLines = run.mock.calls.map(call => [call[0], ...call[1]].join(' '))
   expect(commandLines).toHaveLength(paths.length)
   commandLines.forEach((line, index) => {
@@ -160,14 +161,44 @@ it('keeps the complete Windows command line below the CreateProcess limit for lo
   })
 })
 
+it.each([['unset', {}], ['blank', { SystemRoot: '' }]])('resolves the bare PowerShell name through PATH when %SystemRoot% is %s', async (_label, env) => {
+  const run = vi.fn<runner.NativeCommandRunner>(async () => ({ stdout: '[]', stderr: '' }))
+  await nativeFileApplications('C:\\file.mp3', signal, { platform: 'win32', run, env })
+  expect(run.mock.calls[0]![0]).toBe('powershell.exe')
+})
+
+it('starts PowerShell from %SystemRoot% so a PATH without the system directories still queries and launches', async () => {
+  const run = vi.fn<runner.NativeCommandRunner>(async () => ({ stdout: '[]', stderr: '' }))
+  const env = { SystemRoot: 'C:\\Windows' }
+  await nativeFileApplications('C:\\file.mp3', signal, { platform: 'win32', run, env })
+  expect(run.mock.calls[0]![0]).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
+  await openNativeFileApplication('C:\\file.mp3', application.id, signal, { platform: 'win32', run, env })
+  expect(run.mock.calls[1]![0]).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
+})
+
+it('resolves the adapter command from the current environment when no override is supplied', async () => {
+  const run = vi.fn<runner.NativeCommandRunner>(async () => ({ stdout: '[]', stderr: '' }))
+  await nativeFileApplications('C:\\file.mp3', signal, { platform: 'win32', run })
+  await openNativeFileApplication('C:\\file.mp3', application.id, signal, { platform: 'win32', run })
+  const root = process.env.SystemRoot
+  const expected = root === undefined || root === ''
+    ? 'powershell.exe'
+    : win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  expect(run.mock.calls[0]![0]).toBe(expected)
+  expect(run.mock.calls[1]![0]).toBe(expected)
+})
+
 it('uses the Windows desktop for WSL paths and rejects an empty translation', async () => {
   const run = vi.fn<runner.NativeCommandRunner>(async command => ({
     stdout: command === 'wslpath' ? 'C:\\音频.mp3\n' : JSON.stringify([application]), stderr: '',
   }))
-  const facts = { platform: 'linux' as const, osRelease: 'microsoft', env: {}, run }
+  const facts = { platform: 'linux' as const, osRelease: 'microsoft', env: { SystemRoot: 'C:\\Windows' }, run }
   expect(await nativeFileApplications('/mnt/c/音频.mp3', signal, facts)).toEqual([application])
   await openNativeFileApplication('/mnt/c/音频.mp3', application.id, signal, facts)
   expect(run).toHaveBeenCalledWith('wslpath', ['-w', '/mnt/c/音频.mp3'], signal, 'hidden')
+  // WSL resolves Windows executables through its interop PATH, so SystemRoot stays unused there.
+  expect(run.mock.calls[1]![0]).toBe('powershell.exe')
+  expect(run.mock.calls[3]![0]).toBe('powershell.exe')
   const empty = async () => ({ stdout: '', stderr: '' })
   await expect(nativeFileApplications('/a', signal, { ...facts, run: empty })).rejects.toThrow('no Windows path')
 })
