@@ -10,5 +10,6 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `04-input-modality-synthetic-key.md` | `fix/input-modality-synthetic-key` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14246` |
 | `05-workflow-agent-reasoning-effort.md` | `feat/workflow-agent-reasoning-effort` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14243` |
 | `06-subprocess-git-command-line-config.md` | `fix/subprocess-git-command-line-config` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14242` |
+| `07-session-query-exclude-ids.md` | `feat/session-query-exclude-ids` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14238` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
