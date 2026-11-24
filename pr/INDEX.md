@@ -12,5 +12,6 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `06-subprocess-git-command-line-config.md` | `fix/subprocess-git-command-line-config` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14242` |
 | `07-session-query-exclude-ids.md` | `feat/session-query-exclude-ids` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14238` |
 | `08-native-command-systemroot-explorer.md` | `fix/native-command-systemroot-explorer` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14258` |
+| `09-native-command-powershell-systemroot.md` | `fix/native-command-powershell-systemroot` | `fix/native-command-systemroot-explorer` (stacked; upstream `master`, dsh-v0.2.3-alpha.2) | `#14258` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
