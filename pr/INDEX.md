@@ -13,5 +13,6 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `07-session-query-exclude-ids.md` | `feat/session-query-exclude-ids` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14238` |
 | `08-native-command-systemroot-explorer.md` | `fix/native-command-systemroot-explorer` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14258` |
 | `09-native-command-powershell-systemroot.md` | `fix/native-command-powershell-systemroot` | `fix/native-command-systemroot-explorer` (stacked; upstream `master`, dsh-v0.2.3-alpha.2) | `#14258` |
+| `10-session-fork-workspace-grouping.md` | `fix/session-fork-workspace-grouping` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14262` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
