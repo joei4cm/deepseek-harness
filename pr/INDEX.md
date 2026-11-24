@@ -8,5 +8,6 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `02-subagent-model-advice.md` | `feat/subagent-model-advice` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14095` |
 | `03-llm-local-inference.md` | `feat/llm-local-inference` | upstream `master`, dsh-v0.2.3-alpha.2 | — |
 | `04-input-modality-synthetic-key.md` | `fix/input-modality-synthetic-key` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14246` |
+| `05-workflow-agent-reasoning-effort.md` | `feat/workflow-agent-reasoning-effort` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14243` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
