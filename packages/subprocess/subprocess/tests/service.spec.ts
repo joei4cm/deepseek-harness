@@ -100,4 +100,27 @@ describe('SubprocessRuntime seam', () => {
       delete process.env.SCRUB_PROBE_PLAIN
     }
   })
+
+  it('scrubbedParentEnv drops Git command-line config as one group, never orphaning the counter', () => {
+    process.env.GIT_CONFIG_COUNT = '1'
+    process.env.GIT_CONFIG_KEY_0 = 'core.bare'
+    process.env.GIT_CONFIG_VALUE_0 = 'true'
+    process.env.GIT_CONFIG_PARAMETERS = "'core.bare'='true'"
+    process.env.GIT_TERMINAL_PROMPT = '0'
+    try {
+      const env = scrubbedParentEnv()
+      expect(env.GIT_CONFIG_COUNT).toBeUndefined()
+      expect(env.GIT_CONFIG_KEY_0).toBeUndefined()
+      expect(env.GIT_CONFIG_VALUE_0).toBeUndefined()
+      expect(env.GIT_CONFIG_PARAMETERS).toBeUndefined()
+      // Ordinary GIT_* names stay: they carry no credential and no half-group.
+      expect(env.GIT_TERMINAL_PROMPT).toBe('0')
+    } finally {
+      delete process.env.GIT_CONFIG_COUNT
+      delete process.env.GIT_CONFIG_KEY_0
+      delete process.env.GIT_CONFIG_VALUE_0
+      delete process.env.GIT_CONFIG_PARAMETERS
+      delete process.env.GIT_TERMINAL_PROMPT
+    }
+  })
 })
