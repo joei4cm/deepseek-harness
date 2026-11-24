@@ -108,7 +108,7 @@ describe('native path opener', () => {
     ['\\\\wsl$\\Ubuntu\\home\\t,est a.txt', 'file://wsl$/Ubuntu/home/t%2Cest%20a.txt'],
   ] as const)('opens %s through the one encoded Explorer target', async (path, target) => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
-    await openNativePath(path, signal(), { platform: 'win32', run })
+    await openNativePath(path, signal(), { platform: 'win32', env: {}, run })
     expect(run).toHaveBeenCalledExactlyOnceWith('explorer.exe', [target], expect.any(AbortSignal), 'visible')
   })
 
@@ -117,7 +117,7 @@ describe('native path opener', () => {
   // this opener runs on than on the POSIX host a test run may use.
   it('encodes a separator-terminated drive root as the hosting platform resolves it', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
-    await openNativePath('C:\\', signal(), { platform: 'win32', run })
+    await openNativePath('C:\\', signal(), { platform: 'win32', env: {}, run })
     expect(run).toHaveBeenCalledExactlyOnceWith(
       'explorer.exe',
       [process.platform === 'win32' ? 'file:///C:/' : 'file:///C://'],
@@ -128,7 +128,7 @@ describe('native path opener', () => {
 
   it('encodes a directory target the same way it encodes a file target', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
-    await openNativeAssociatedPath('C:\\work\\dir,comma', signal(), { platform: 'win32', run })
+    await openNativeAssociatedPath('C:\\work\\dir,comma', signal(), { platform: 'win32', env: {}, run })
     expect(run).toHaveBeenCalledWith(
       'explorer.exe',
       ['file:///C:/work/dir%2Ccomma'],
@@ -139,7 +139,7 @@ describe('native path opener', () => {
 
   it('uses the Windows desktop association for text documents', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
-    await openNativeTextFile('C:\\work\\settings.yaml', signal(), { platform: 'win32', run })
+    await openNativeTextFile('C:\\work\\settings.yaml', signal(), { platform: 'win32', env: {}, run })
     expect(run).toHaveBeenCalledWith(
       'explorer.exe',
       ['file:///C:/work/settings.yaml'],
@@ -193,7 +193,7 @@ describe('native path opener', () => {
     execFileMock.mockImplementationOnce((_command, _args, _options, callback) => {
       callback(null, '', '')
     })
-    await open('C:\\work\\report.txt', signal(), { platform: 'win32' })
+    await open('C:\\work\\report.txt', signal(), { platform: 'win32', env: {} })
     expect(execFileMock.mock.lastCall?.[0]).toBe('explorer.exe')
     expect(execFileMock.mock.lastCall?.[2].windowsHide).toBe(false)
   })
@@ -310,6 +310,7 @@ describe('browser-renderable documents', () => {
     const win: string[][] = []
     await openNativePath('C:\\w\\page.html', new AbortController().signal, {
       platform: 'win32',
+      env: {},
       run: async (command, args) => { win.push([command, ...args]); return { stdout: '', stderr: '' } },
     })
     expect(win[0]?.[0]).toBe('explorer.exe')
@@ -421,6 +422,48 @@ describe('native file manager', () => {
 })
 
 
+describe('Explorer executable', () => {
+  // `execFile` resolves a bare command through PATH, and a Windows PATH need
+  // not contain C:\Windows; %SystemRoot% always names the directory Explorer
+  // lives in.
+  it('starts Explorer from %SystemRoot% so a PATH without C:\\Windows still opens and reveals', async () => {
+    const env = { SystemRoot: 'C:\\Windows' }
+    const opening = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
+    await openNativePath('C:\\work\\report.txt', signal(), { platform: 'win32', env, run: opening })
+    expect(opening.mock.calls.map(([command, args]) => [command, args])).toEqual([
+      ['C:\\Windows\\explorer.exe', ['file:///C:/work/report.txt']],
+    ])
+    const revealing = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
+    await revealNativePath('C:\\work\\report.txt', signal(), { platform: 'win32', env, run: revealing })
+    expect(revealing.mock.calls.map(([command, args]) => [command, args])).toEqual([
+      ['C:\\Windows\\explorer.exe', ['/select,', 'file:///C:/work/report.txt']],
+    ])
+  })
+
+  it.each([
+    ['unset', {}],
+    ['blank', { SystemRoot: '' }],
+  ])('resolves the bare Explorer name through PATH when %SystemRoot% is %s', async (_label, env) => {
+    const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
+    await openNativePath('C:\\work\\report.txt', signal(), { platform: 'win32', env, run })
+    expect(run.mock.calls.map(([command]) => command)).toEqual(['explorer.exe'])
+  })
+
+  it('keeps the bare Explorer name under WSL, where the interop resolves it', async () => {
+    // A Windows path is not executable from the Linux side.
+    const run = vi.fn<PathOpenerRunner>(async command => command === 'wslpath'
+      ? { stdout: 'C:\\work\\report.txt\r\n', stderr: '' }
+      : { stdout: '', stderr: '' })
+    const internals = {
+      platform: 'linux' as const, env: { WSL_DISTRO_NAME: 'Ubuntu', SystemRoot: 'C:\\Windows' }, run,
+    }
+    await openNativePath('/mnt/c/work/report.txt', signal(), internals)
+    await revealNativePath('/mnt/c/work/report.txt', signal(), internals)
+    expect(run.mock.calls.map(([command]) => command)).toEqual(['wslpath', 'explorer.exe', 'wslpath', 'explorer.exe'])
+  })
+})
+
+
 it('uses the native runner for a file-manager handoff when none is injected', async () => {
   execFileMock.mockImplementation((command, _args, _options, callback) => { callback(null, command === 'wslpath' ? 'C:\\work\\report.txt' : '', '') })
   await revealNativePath('/tmp/report.txt', signal())
@@ -476,7 +519,7 @@ it.each([
   ['\\\\server\\share\\a,b.txt', 'file://server/share/a%2Cb.txt'],
 ])('preserves special characters in the Explorer target %s', async (path, target) => {
   const run = vi.fn<PathOpenerRunner>().mockResolvedValue({ stdout: '', stderr: '' })
-  await revealNativePath(path, signal(), { platform: 'win32', run })
+  await revealNativePath(path, signal(), { platform: 'win32', env: {}, run })
   expect(run).toHaveBeenCalledWith('explorer.exe', ['/select,', target], expect.any(AbortSignal), 'visible')
 })
 

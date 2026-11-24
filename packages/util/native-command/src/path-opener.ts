@@ -13,7 +13,7 @@
  */
 
 import { isWsl } from './host-environment.ts'
-import { dirname, extname } from 'node:path'
+import { dirname, extname, win32 } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runNativeCommand, type NativeCommandRunner } from './runner.ts'
 
@@ -25,7 +25,10 @@ export interface PathOpenerInternals {
   platform?: NodeJS.Platform
   /** Kernel release override used to distinguish WSL from desktop Linux. */
   osRelease?: string
-  /** Environment used for WSL markers and the desktop Linux browser convention. */
+  /**
+   * Environment used for WSL markers, the desktop Linux browser convention,
+   * and the Windows Explorer location (`SystemRoot`).
+   */
   env?: NodeJS.ProcessEnv
   run?: PathOpenerRunner
 }
@@ -115,21 +118,42 @@ function explorerTarget(windowsPath: string): string {
     .replaceAll('=', '%3D')
 }
 
+/** Explorer executable resolved through `PATH`; the fallback when `%SystemRoot%` is unavailable. */
+const WINDOWS_EXPLORER = 'explorer.exe'
+
+/**
+ * Resolve the Explorer executable of a Windows host.
+ *
+ * `%SystemRoot%` is always defined on Windows, but a trimmed `PATH` need not
+ * contain `C:\Windows`, where Explorer lives; the bare name then fails to
+ * resolve with `ENOENT`. WSL keeps the bare name: its interop resolves
+ * Windows executables through the interop path, not through a Windows path.
+ * @param env - the Windows host environment.
+ * @returns the Explorer executable to spawn.
+ */
+function windowsExplorer(env: NodeJS.ProcessEnv): string {
+  const root = env.SystemRoot
+  return root === undefined || root === '' ? WINDOWS_EXPLORER : win32.join(root, 'explorer.exe')
+}
+
 /**
  * Hand one target to Explorer, accepting its delegated-handoff exit code.
  *
  * Explorer exits 1 after handing the request to the desktop process already
  * running, so exit 1 means the shell took it. Every other failure still
  * rejects, and cancellation wins over a delegate's exit 1.
+ * @param command - the Explorer executable to spawn.
  * @param args - Explorer argv: the encoded target alone to open it, or `/select,<encoded target>` to reveal it.
  * @param signal - caller lifetime; abort terminates the command.
  * @param run - shell-free command runner.
  * @throws The runner's failure unless it is Explorer's delegate exit 1.
  */
-async function runExplorer(args: readonly string[], signal: AbortSignal, run: PathOpenerRunner): Promise<void> {
+async function runExplorer(
+  command: string, args: readonly string[], signal: AbortSignal, run: PathOpenerRunner,
+): Promise<void> {
   try {
     // SW_HIDE also hides Explorer's folder window, not just console windows.
-    await run('explorer.exe', args, signal, 'visible')
+    await run(command, args, signal, 'visible')
   } catch (error: unknown) {
     signal.throwIfAborted()
     // Explorer can exit 1 after delegating to the existing desktop process.
@@ -143,9 +167,12 @@ async function runExplorer(args: readonly string[], signal: AbortSignal, run: Pa
  * @param path - Windows-resolvable path; Explorer receives its encoded file URI as one argv element, never a command string.
  * @param signal - caller lifetime; abort terminates the command.
  * @param run - shell-free command runner.
+ * @param command - the Explorer executable to spawn.
  */
-async function openWindowsPath(path: string, signal: AbortSignal, run: PathOpenerRunner): Promise<void> {
-  await runExplorer([explorerTarget(path)], signal, run)
+async function openWindowsPath(
+  path: string, signal: AbortSignal, run: PathOpenerRunner, command: string,
+): Promise<void> {
+  await runExplorer(command, [explorerTarget(path)], signal, run)
 }
 
 /** Translate a WSL path before handing it to the Windows desktop. */
@@ -154,7 +181,7 @@ async function openWslPath(path: string, signal: AbortSignal, run: PathOpenerRun
   signal.throwIfAborted()
   const windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
   if (windowsPath === '') throw new Error('wslpath returned no Windows path')
-  await openWindowsPath(windowsPath, signal, run)
+  await openWindowsPath(windowsPath, signal, run, WINDOWS_EXPLORER)
 }
 
 /** Dispatch one shell-free platform command for the requested open intent. */
@@ -178,7 +205,7 @@ async function openNativePathWithIntent(
   }
 
   if (platform === 'win32') {
-    await openWindowsPath(path, signal, run)
+    await openWindowsPath(path, signal, run, windowsExplorer(env))
     return
   }
 
@@ -284,6 +311,7 @@ export async function revealNativePath(
   signal.throwIfAborted()
   const platform = internals.platform ?? process.platform
   const run = internals.run ?? runNativeCommand
+  const env = internals.env ?? process.env
   const manager = nativeFileManager({ ...internals, platform })
   if (manager === 'finder') {
     await run('open', ['-R', path], signal, 'hidden')
@@ -291,13 +319,16 @@ export async function revealNativePath(
   }
   if (manager === 'explorer') {
     let windowsPath = path
+    let command = WINDOWS_EXPLORER
     if (platform === 'linux') {
       const translated = await run('wslpath', ['-w', path], signal, 'hidden')
       signal.throwIfAborted()
       windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
       if (windowsPath === '') throw new Error('wslpath returned no Windows path')
+    } else {
+      command = windowsExplorer(env)
     }
-    await runExplorer(['/select,', explorerTarget(windowsPath)], signal, run)
+    await runExplorer(command, ['/select,', explorerTarget(windowsPath)], signal, run)
     return
   }
   if (manager === 'directory') {
