@@ -780,6 +780,44 @@ describe('ui-workspace apply', () => {
     expect(b.fork).toHaveBeenCalledOnce()
   })
 
+  it.each([
+    {
+      reason: 'unavailable' as const,
+      error: () => new SessionForkError(
+        new RemoteError('session/fork-unavailable', 'no completed turn', { sessionId: sid('source') }),
+        sid('source'),
+      ),
+      warns: false,
+    },
+    {
+      reason: 'failed' as const,
+      error: () => new SessionForkError(
+        new RemoteError('session/workspace-attach-failed', 'attachment rejected', { sessionId: sid('source'), workspaceId: 'workspace-1' }),
+        sid('source'),
+      ),
+      warns: true,
+    },
+  ])('reports a menu fork rejection as a $reason toast instead of staying silent', async ({ reason, error: makeError, warns }) => {
+    const b = await bench()
+    onTestFinished(() => b.ctx.fiber.dispose())
+    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
+    await b.ctx.plugin({ inject: [...inject], apply }, syncedConfig({ recentViewLimit: 10 })).await()
+    b.fork.mockRejectedValueOnce(makeError())
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => { warning.mockRestore() })
+    const fork = sessionMenuActions(b.ctx)
+    const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
+
+    fork.forkSession(sid('source'))
+    await vi.waitFor(() => {
+      expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'shortcutForkFailed', reason, seq: 1 })
+    })
+    expect(b.retain).not.toHaveBeenCalled()
+    expect(b.selectPanel).not.toHaveBeenCalled()
+    if (warns) expect(warning).toHaveBeenCalledExactlyOnceWith('session fork rejected:', expect.any(Error))
+    else expect(warning).not.toHaveBeenCalled()
+  })
+
   it.each(['before the notice', 'after the notice'] as const)(
     'keeps a fork source archived %s closed when its Toast action requests opening', async (timing) => {
       const b = await bench()
@@ -837,7 +875,29 @@ describe('ui-workspace apply', () => {
     expect(b.selectPanel).not.toHaveBeenCalled()
   })
 
-  it.each(['ordinary', 'other-remote', 'unwrapped-migration'] as const)('keeps a fork failure silent after rejection (%s)', async (kind) => {
+  it.each([
+    {
+      kind: 'ordinary' as const,
+      error: () => new Error('fork failed'),
+      notice: { kind: 'shortcutForkFailed', reason: 'failed' },
+      warns: true,
+    },
+    {
+      kind: 'other-remote' as const,
+      error: () => new SessionForkError(
+        new RemoteError('session/fork-unavailable', 'no completed turn', { sessionId: sid('source') }),
+        sid('source'),
+      ),
+      notice: { kind: 'shortcutForkFailed', reason: 'unavailable' },
+      warns: false,
+    },
+    {
+      kind: 'unwrapped-migration' as const,
+      error: () => new RemoteError('session/migration-required', 'migration required', { sessionId: sid('source') }),
+      notice: { kind: 'forkRequiresOpen', sessionId: 'source' },
+      warns: false,
+    },
+  ])('reports a fork rejection through the toast surface ($kind)', async ({ error: makeError, notice, warns }) => {
     const b = await bench()
     onTestFinished(() => b.ctx.fiber.dispose())
     declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
@@ -845,27 +905,26 @@ describe('ui-workspace apply', () => {
     using source = b.ctx.sessions.retain(sid('source'), { source: 'controllerOperation' })
     await source.ready
     b.retain.mockClear()
-    const error = kind === 'ordinary'
-      ? new Error('fork failed')
-      : kind === 'other-remote'
-        ? new SessionForkError(
-          new RemoteError('session/fork-unavailable', 'no completed turn', { sessionId: sid('source') }),
-          sid('source'),
-        )
-        : new RemoteError('session/migration-required', 'migration required', { sessionId: sid('source') })
+    const error = makeError()
     b.fork.mockRejectedValueOnce(error)
     const forkSession = vi.spyOn(b.ctx.uiWorkspace, 'forkSession')
     const fork = sessionMenuActions(b.ctx)
     const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => { warning.mockRestore() })
 
     fork.forkSession(sid('source'))
     expect(forkSession).toHaveBeenCalledOnce()
     await expect(forkSession.mock.results[0]!.value).rejects.toBe(error)
 
-    expect(toast.hooks.toast.getSnapshot()).toBeNull()
+    await vi.waitFor(() => {
+      expect(toast.hooks.toast.getSnapshot()).toEqual({ ...notice, seq: 1 })
+    })
     expect(b.fork).toHaveBeenCalledOnce()
     expect(b.retain).not.toHaveBeenCalled()
     expect(b.selectPanel).not.toHaveBeenCalled()
+    if (warns) expect(warning).toHaveBeenCalledExactlyOnceWith('session fork rejected:', expect.any(Error))
+    else expect(warning).not.toHaveBeenCalled()
   })
 
   it('routes browser actions and picker creation to the services', async () => {

@@ -286,10 +286,21 @@ export function apply(ctx: Context, config: SyncedConfig<WorkspaceNavigationConf
       uiWorkspace.forkSession(sessionId, (childId) => {
         ctx.get('productAnalytics')?.track('branch_session_click', { session_id: childId, parent_session_id: sessionId, click_position: 'sidebar' })
       }, { allowMigration: false }).catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'SessionForkError'
-          && (error as SessionForkError).rpcError.code === 'session/migration-required') {
+        // Client plugin bundles do not share error-class identity: the wrapper
+        // reads by name, a bare RemoteError by its structural marker.
+        const rpcCode = error instanceof Error && error.name === 'SessionForkError'
+          ? (error as SessionForkError).rpcError.code
+          : (error as { isDSHRemoteError?: unknown } | null)?.isDSHRemoteError === true
+            ? String((error as { code: unknown }).code) : undefined
+        if (rpcCode === 'session/migration-required') {
           notify({ kind: 'forkRequiresOpen', sessionId })
+          return
         }
+        // A fork that fails after creating the child — for example a rejected
+        // workspace attachment — still publishes the child; silence would read
+        // as an ungrouped fork (Discussion #14262).
+        notify({ kind: 'shortcutForkFailed', reason: rpcCode === 'session/fork-unavailable' ? 'unavailable' : 'failed' })
+        if (rpcCode !== 'session/fork-unavailable') console.warn('session fork rejected:', error)
       })
     },
   })
