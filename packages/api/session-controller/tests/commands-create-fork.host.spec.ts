@@ -277,6 +277,63 @@ describe('Session fork failures', () => {
     await ctx.fiber.dispose()
   })
 
+  it('attaches through the workspace owning the source cwd when the candidate view hides the source', async () => {
+    const ctx = await baseContext()
+    const source = completedSession(ctx, 'filtered-source', '/workspace')
+    const attachSession = vi.fn<(sessionId: SessionId) => Promise<void>>()
+      .mockResolvedValue(undefined)
+    const workspace = {
+      id: 'workspace-1' as WorkspaceId,
+      path: '/workspace',
+      // The durable member is hidden from the candidate projection, as a
+      // transient indexing failure leaves it (Discussion #14262).
+      sessionIds: [] as readonly SessionId[],
+      attachSession,
+    } as unknown as Workspace
+    ctx.provide('workspaceRegistry', {
+      list: () => [workspace],
+      resolveByPath: (path: string) => Promise.resolve(path === '/workspace' ? workspace : undefined),
+    } as never)
+    vi.spyOn(ctx.agents, 'create').mockImplementation(
+      (options: CreateAgentOptions) => Promise.resolve(resolvedHandle(ctx, options.sessionId)),
+    )
+    const controller = new SessionCommandController(ctx, controllerAgents(ctx), '/default')
+
+    const result = await controller.fork({ sessionId: source.id })
+
+    expect(attachSession).toHaveBeenCalledWith(result.sessionId)
+    await ctx.fiber.dispose()
+  })
+
+  it.each([
+    ['owns no workspace', () => Promise.resolve(undefined)],
+    ['does not resolve', () => Promise.reject(new Error('ENOENT: no such directory'))],
+  ])('leaves the fork child ungrouped when the source cwd %s', async (_label, resolveByPath) => {
+    const ctx = await baseContext()
+    ctx.provide('workspaceRegistry', { list: () => [], resolveByPath } as never)
+    const source = completedSession(ctx, 'unowned-source', '/elsewhere')
+    vi.spyOn(ctx.agents, 'create').mockImplementation(
+      (options: CreateAgentOptions) => Promise.resolve(resolvedHandle(ctx, options.sessionId)),
+    )
+    const controller = new SessionCommandController(ctx, controllerAgents(ctx), '/default')
+
+    await expect(controller.fork({ sessionId: source.id })).resolves.toMatchObject({})
+    await ctx.fiber.dispose()
+  })
+
+  it('leaves a cwdless ordinary fork child ungrouped', async () => {
+    const ctx = await baseContext()
+    ctx.provide('workspaceRegistry', { list: () => [] } as never)
+    const source = completedSession(ctx, 'cwdless-source')
+    vi.spyOn(ctx.agents, 'create').mockImplementation(
+      (options: CreateAgentOptions) => Promise.resolve(resolvedHandle(ctx, options.sessionId)),
+    )
+    const controller = new SessionCommandController(ctx, controllerAgents(ctx), '/default')
+
+    await expect(controller.fork({ sessionId: source.id })).resolves.toMatchObject({})
+    await ctx.fiber.dispose()
+  })
+
   it('carries the composed Agent preset into the child metadata', async () => {
     const ctx = await baseContext()
     ctx.provide('workspaceRegistry', { list: () => [] } as never)

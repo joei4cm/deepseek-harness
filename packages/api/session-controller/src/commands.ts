@@ -571,13 +571,32 @@ export class SessionCommandController {
   private async forkWorkspace(source: SessionHeader): Promise<Workspace | undefined> {
     const workspaces = this.ctx.workspaceRegistry.list()
     const direct = workspaces.find(workspace => workspace.sessionIds.includes(source.id))
-    if (direct !== undefined || source.origin !== 'subagent') return direct
+    if (direct !== undefined) return direct
+    // The candidate view can hide a durable member after a transient indexing
+    // failure; the fork child inherits the source cwd, so the workspace owning
+    // that directory is the attach target and revalidates the child cwd.
+    if (source.cwd !== undefined) {
+      const owned = await this.forkWorkspaceByCwd(source.cwd)
+      if (owned !== undefined) return owned
+    }
+    if (source.origin !== 'subagent') return undefined
     const lineage = await this.ctx.sessionQuery.traceSession(source.id)
     for (const ancestor of lineage.ancestors) {
       const workspace = workspaces.find(candidate => candidate.sessionIds.includes(ancestor.header.id))
       if (workspace !== undefined) return workspace
     }
     return undefined
+  }
+
+  /** Resolve the workspace owning one directory; an unresolvable directory owns none here. */
+  private async forkWorkspaceByCwd(cwd: string): Promise<Workspace | undefined> {
+    try {
+      return await this.ctx.workspaceRegistry.resolveByPath(cwd)
+    } catch {
+      // A missing or unreadable source directory owns no workspace in this
+      // lookup; membership retention and lineage stay the arbiters.
+      return undefined
+    }
   }
 }
 
