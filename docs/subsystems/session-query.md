@@ -108,15 +108,17 @@ interface SessionEventRecord {
 
 ## Provider-independent filters and documents
 
-Session and event filter arrays are ANDed; values inside one list clause are ORed. Ranges are inclusive. The event `text` clause is a literal Unicode case-insensitive, whitespace-flexible regular-expression scan over extracted semantic text, independent of full-text providers.
+Session and event filter arrays are ANDed; values inside one list clause are ORed. Ranges are inclusive. The `exclude-ids` clause rejects the listed session ids and excludes nothing when its list is empty, so a provider drops those sessions before ranking and pagination instead of a consumer removing them from a page afterwards. The event `text` clause is a literal Unicode case-insensitive, whitespace-flexible regular-expression scan over extracted semantic text, independent of full-text providers.
 
 ```ts type-equiv
 /**
  * One logical-session predicate. A filter array is ANDed; `values` within a
- * clause are ORed.
+ * clause are ORed. `exclude-ids` rejects the listed ids, so an empty list
+ * excludes nothing while an empty `id` list matches nothing.
  */
 type SessionResultFilter =
   | { kind: 'id'; values: readonly SessionId[] }
+  | { kind: 'exclude-ids'; values: readonly SessionId[] }
   | { kind: 'cwd'; values: readonly (string | null)[] }
   | ({ kind: 'created-at' } & SessionResultRange)
   | { kind: 'parent'; values: readonly (SessionId | null)[] }

@@ -150,6 +150,9 @@ export function buildSessionWhere(filters: readonly SessionResultFilter[]): SqlW
       case 'id':
         addList(clauses, params, 'session_id', filter.values)
         break
+      case 'exclude-ids':
+        addExclusionList(clauses, params, 'session_id', filter.values)
+        break
       case 'cwd':
         addNullableList(clauses, params, 'cwd', filter.values)
         break
@@ -393,6 +396,16 @@ function addList(
     return
   }
   clauses.push(`${column} IN (${appendListBindings(params, values)})`)
+}
+
+function addExclusionList(
+  clauses: string[],
+  params: Array<string | number>,
+  column: string,
+  values: readonly (string | number)[],
+): void {
+  if (values.length === 0) return
+  clauses.push(`${column} NOT IN (${appendListBindings(params, values)})`)
 }
 
 function addNullableList(

@@ -50,6 +50,8 @@ export function materializeSessionResultFilters(
     switch (filter.kind) {
       case 'id':
         return { kind: filter.kind, values: copyStrings(filter.kind, filter.values) }
+      case 'exclude-ids':
+        return { kind: filter.kind, values: copyStrings(filter.kind, filter.values) }
       case 'cwd':
         return { kind: filter.kind, values: copyNullableStrings(filter.kind, filter.values) }
       case 'created-at':
@@ -121,6 +123,8 @@ function sessionPredicate(filter: SessionResultFilter): (record: SessionRecord) 
   switch (filter.kind) {
     case 'id':
       return record => filter.values.includes(record.header.id)
+    case 'exclude-ids':
+      return record => !filter.values.includes(record.header.id)
     case 'cwd':
       return record => filter.values.includes(record.header.cwd ?? null)
     case 'created-at': {

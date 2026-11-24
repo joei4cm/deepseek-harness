@@ -108,15 +108,17 @@ interface SessionEventRecord {
 
 ## 与提供方无关的过滤器和文档
 
-会话和事件过滤器数组内的各项按逻辑与（AND）组合；单个列表子句中的各值按逻辑或（OR）组合。范围包含两端。事件的 `text` 子句会对提取出的语义文本执行正则表达式扫描：搜索文本按字面量处理，按 Unicode 规则执行不区分大小写的匹配，并允许灵活匹配空白字符；该过程与全文搜索提供方无关。
+会话和事件过滤器数组内的各项按逻辑与（AND）组合；单个列表子句中的各值按逻辑或（OR）组合。范围包含两端。`exclude-ids` 子句拒绝列出的会话 id，其列表为空时不排除任何会话，因此提供方会在排名和分页之前丢弃这些会话，而不是由消费方在拿到结果页之后再删除。事件的 `text` 子句会对提取出的语义文本执行正则表达式扫描：搜索文本按字面量处理，按 Unicode 规则执行不区分大小写的匹配，并允许灵活匹配空白字符；该过程与全文搜索提供方无关。
 
 ```ts type-equiv
 /**
  * One logical-session predicate. A filter array is ANDed; `values` within a
- * clause are ORed.
+ * clause are ORed. `exclude-ids` rejects the listed ids, so an empty list
+ * excludes nothing while an empty `id` list matches nothing.
  */
 type SessionResultFilter =
   | { kind: 'id'; values: readonly SessionId[] }
+  | { kind: 'exclude-ids'; values: readonly SessionId[] }
   | { kind: 'cwd'; values: readonly (string | null)[] }
   | ({ kind: 'created-at' } & SessionResultRange)
   | { kind: 'parent'; values: readonly (SessionId | null)[] }

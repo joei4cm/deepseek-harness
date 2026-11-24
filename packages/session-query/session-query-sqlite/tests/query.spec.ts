@@ -161,6 +161,30 @@ describe('SQLite search predicate compilation', () => {
     })
   })
 
+  it('compiles the exclusion clause as an empty-list no-op and a NOT IN list', () => {
+    expect(buildSessionWhere([{ kind: 'exclude-ids', values: [] }])).toEqual({
+      sql: '',
+      params: [],
+      predicateCount: 0,
+    })
+    expect(buildSessionWhere([{
+      kind: 'exclude-ids',
+      values: [brandString<SessionId>('a'), brandString<SessionId>('b')],
+    }])).toEqual({
+      sql: 'session_id NOT IN (?, ?)',
+      params: [brandString<SessionId>('a'), brandString<SessionId>('b')],
+      predicateCount: 1,
+    })
+    expect(buildSessionWhere([
+      { kind: 'cwd', values: ['/a'] },
+      { kind: 'exclude-ids', values: [brandString<SessionId>('a')] },
+    ])).toEqual({
+      sql: '(cwd IN (?)) AND session_id NOT IN (?)',
+      params: ['/a', brandString<SessionId>('a')],
+      predicateCount: 2,
+    })
+  })
+
   it('compiles every event clause and empty lists', () => {
     expect(buildEventWhere([
       { kind: 'seq', from: 1 },
@@ -216,6 +240,7 @@ describe('SQLite query identity and presentation', () => {
         { kind: 'cwd', values: ['/b', '/a'] },
         { kind: 'parent', values: [null, brandString<SessionId>('p')] },
         { kind: 'id', values: [brandString<SessionId>('same'), brandString<SessionId>('same')] },
+        { kind: 'exclude-ids', values: [brandString<SessionId>('x'), brandString<SessionId>('y')] },
         { kind: 'created-at', from: 1 },
       ],
       eventFilters: [{ kind: 'time', to: 9 }],
@@ -225,6 +250,7 @@ describe('SQLite query identity and presentation', () => {
       limit: 2,
       sessionFilters: [
         { kind: 'created-at', from: 1 },
+        { kind: 'exclude-ids', values: [brandString<SessionId>('y'), brandString<SessionId>('x')] },
         { kind: 'id', values: [brandString<SessionId>('same'), brandString<SessionId>('same')] },
         { kind: 'parent', values: [brandString<SessionId>('p'), null] },
         { kind: 'cwd', values: ['/a', '/b'] },
@@ -232,6 +258,13 @@ describe('SQLite query identity and presentation', () => {
       eventFilters: [{ kind: 'time', to: 9 }],
     }
     expect(requestFingerprint(sessionA)).toBe(requestFingerprint(sessionB))
+    expect(requestFingerprint(sessionA)).not.toBe(requestFingerprint({
+      ...sessionB,
+      sessionFilters: [
+        ...sessionB.sessionFilters.filter(filter => filter.kind !== 'exclude-ids'),
+        { kind: 'exclude-ids', values: [brandString<SessionId>('x')] },
+      ],
+    }))
 
     const eventA: NormalizedEventRequest = {
       sessionId: brandString<SessionId>('s'),

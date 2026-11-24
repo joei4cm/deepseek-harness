@@ -215,10 +215,12 @@ export type SessionAvailability = 'live' | 'persisted'
 
 /**
  * One logical-session predicate. A filter array is ANDed; `values` within a
- * clause are ORed.
+ * clause are ORed. `exclude-ids` rejects the listed ids, so an empty list
+ * excludes nothing while an empty `id` list matches nothing.
  */
 export type SessionResultFilter =
   | { kind: 'id'; values: readonly SessionId[] }
+  | { kind: 'exclude-ids'; values: readonly SessionId[] }
   | { kind: 'cwd'; values: readonly (string | null)[] }
   | ({ kind: 'created-at' } & SessionResultRange)
   | { kind: 'parent'; values: readonly (SessionId | null)[] }

@@ -88,6 +88,9 @@ async function executeSessionSearch(
     sessionFilters.push({ kind: 'parent', values: parentValues })
   }
   sessionFilters.push({ kind: 'cwd', values: [cwd] })
+  // The caller's own session is excluded by the provider before ranking, so it
+  // never consumes a page slot that a prior session could fill.
+  sessionFilters.push({ kind: 'exclude-ids', values: [caller.id] })
   const collected = await collectPages(
     maxResults,
     exec.signal,
@@ -98,7 +101,7 @@ async function executeSessionSearch(
         eventFilters,
         ...cursor === undefined ? {} : { cursor },
       }, { signal: exec.signal })),
-    hit => hit.header.id !== caller.id && workspaceAccess.recordAuthorized(hit, caller),
+    hit => workspaceAccess.recordAuthorized(hit, caller),
   )
 
   const parentIds = collected.items

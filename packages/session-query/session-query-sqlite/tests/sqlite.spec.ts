@@ -455,6 +455,30 @@ describe('SQLite session search', () => {
     })
   })
 
+  it('drops excluded sessions before ranking so they never consume a page slot', async () => {
+    const ctx = await liveContext({ path: ':memory:', defaultLimit: 2, maxLimit: 20 })
+    const excluded = brandString<SessionId>('excluded')
+    const keptA = brandString<SessionId>('kept-a')
+    const keptB = brandString<SessionId>('kept-b')
+    ctx.sessions.create(excluded, { seed: messageEvents('needle', 40), meta: { createdAt: 40 } })
+    ctx.sessions.create(keptA, { seed: messageEvents('needle aaaaaa', 30), meta: { createdAt: 30 } })
+    ctx.sessions.create(keptB, { seed: messageEvents('needle bbbbbb', 20), meta: { createdAt: 20 } })
+    ctx.sessions.create(brandString<SessionId>('kept-c'), { seed: messageEvents('needle cccccc', 10), meta: { createdAt: 10 } })
+
+    const page = await ctx.sessionQuery.searchSessions({
+      query: 'needle',
+      sessionFilters: [{ kind: 'exclude-ids', values: [excluded] }],
+    })
+    expect(page.items.map(item => item.header.id)).toEqual([keptA, keptB])
+    expect(page.nextCursor).toBeDefined()
+
+    const unfiltered = await ctx.sessionQuery.searchSessions({
+      query: 'needle',
+      sessionFilters: [{ kind: 'exclude-ids', values: [] }],
+    })
+    expect(unfiltered.items.map(item => item.header.id)).toEqual([excluded, keptA])
+  })
+
   it('searches at the supported FTS5 outer-predicate boundary in both scopes', async () => {
     const ctx = await liveContext()
     const session = ctx.sessions.create(brandString<SessionId>('predicate-boundary'), {

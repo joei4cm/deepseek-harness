@@ -216,6 +216,21 @@ describe('session-query document and filter helpers', () => {
       .toThrow(expectCode('SESSION_QUERY_INVALID_FILTER'))
   })
 
+  it('excludes the listed session ids and treats an empty exclusion list as a no-op', () => {
+    const records = [
+      { header: header('a'), live: true, persisted: false, marker: 1 },
+      { header: header('b'), live: false, persisted: true, marker: 2 },
+    ]
+    expect(filterSessionResults(records, [
+      { kind: 'exclude-ids', values: [brandString<SessionId>('a')] },
+    ])).toEqual([records[1]])
+    expect(filterSessionResults(records, [{ kind: 'exclude-ids', values: [] }])).toEqual(records)
+    expect(filterSessionResults(records, [
+      { kind: 'exclude-ids', values: [brandString<SessionId>('a')] },
+      { kind: 'availability', values: ['persisted'] },
+    ])).toEqual([records[1]])
+  })
+
   it('applies event metadata and safe literal text clauses', () => {
     const documents = buildSessionEventSearchDocuments(id, events).map((document, marker) => ({ ...document, marker }))
     expect(filterSessionEventDocuments(documents, [
@@ -273,6 +288,11 @@ describe('session-query document and filter helpers', () => {
     expect(() => materializeSessionResultFilters([{ kind: 'cwd', values: 'bad' } as never]))
       .toThrow(expectCode('SESSION_QUERY_INVALID_FILTER'))
     expect(() => materializeSessionResultFilters([{ kind: 'parent', values: [1] } as never]))
+      .toThrow(expectCode('SESSION_QUERY_INVALID_FILTER'))
+    expect(materializeSessionResultFilters([
+      { kind: 'exclude-ids', values: [brandString<SessionId>('a')] },
+    ])).toEqual([{ kind: 'exclude-ids', values: [brandString<SessionId>('a')] }])
+    expect(() => materializeSessionResultFilters([{ kind: 'exclude-ids', values: [1] } as never]))
       .toThrow(expectCode('SESSION_QUERY_INVALID_FILTER'))
     expect(() => materializeSessionResultFilters([{} as never]))
       .toThrow(expectCode('SESSION_QUERY_INVALID_FILTER'))

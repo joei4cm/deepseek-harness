@@ -158,13 +158,20 @@ class FakeQuery extends SessionQueryEngine {
     this.titles = new Map()
   }
 
-  override searchSessions(
+  override async searchSessions(
     request: SessionSearchRequest,
     exec?: SessionSearchExecContext,
   ): Promise<SessionSearchPage<SessionSearchHit>> {
     FakeQuery.sessionRequests.push(request)
     FakeQuery.searchSignals.push(exec?.signal)
-    return FakeQuery.sessionSearch(request, exec)
+    const page = await FakeQuery.sessionSearch(request, exec)
+    // The provider drops excluded sessions before ranking, so the double
+    // applies the same clause instead of returning them for a later filter.
+    const excluded = new Set<SessionIdValue>(
+      (request.sessionFilters ?? [])
+        .flatMap(filter => filter.kind === 'exclude-ids' ? [...filter.values] : []),
+    )
+    return { ...page, items: page.items.filter(hit => !excluded.has(hit.header.id)) }
   }
 
   override searchEvents(
@@ -418,6 +425,7 @@ describe('input validation and translation', () => {
         { kind: 'availability', values: ['live'] },
         { kind: 'parent', values: ['parent', null] },
         { kind: 'cwd', values: ['/work'] },
+        { kind: 'exclude-ids', values: [mounted.caller.id] },
       ],
       eventFilters: [
         { kind: 'seq', from: 2, to: 9 },
@@ -1296,6 +1304,27 @@ describe('search paging, prior-history bounds, titles, and cancellation', () => 
     expect(output).toContain('Parent: [outside workspace]')
     expect(output).not.toContain('outside-parent-secret')
     expect(output).toContain('Result cap reached')
+  })
+
+  it('excludes the caller session on every provider page and keeps it out of the results', async () => {
+    const mounted = await mount({ maxSearchResults: 1 })
+    const cursor = brandString<SessionSearchCursor>('caller-exclusion')
+    FakeQuery.sessionSearch = request => request.cursor === undefined
+      ? Promise.resolve({
+        items: [sessionHit(mounted.caller.id, '/work'), sessionHit('a', '/work')],
+        nextCursor: cursor,
+      })
+      : Promise.resolve({
+        items: [sessionHit('b', '/work')],
+      })
+
+    const output = text(await mounted.call('session_search', { query: 'needle' }))
+    expect(FakeQuery.sessionRequests).toHaveLength(2)
+    for (const request of FakeQuery.sessionRequests) {
+      expect(request.sessionFilters).toContainEqual({ kind: 'exclude-ids', values: [mounted.caller.id] })
+    }
+    expect(output).not.toContain(`Session ${mounted.caller.id}`)
+    expect(output).toContain('Session a')
   })
 
   it('does not report a cap when only rejected hits remain after the authorized limit', async () => {
