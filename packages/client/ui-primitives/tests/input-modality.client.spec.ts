@@ -6,6 +6,7 @@ import { INPUT_MODALITY, INPUT_MODALITY_ATTRIBUTE, pointerModality } from '../sr
 const press = (key: string, init: KeyboardEventInit = {}): void => {
   document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, composed: true, ...init }))
 }
+const dispatchKeydown = (event: Event): void => { window.dispatchEvent(event) }
 const click = (): void => { window.dispatchEvent(new Event('pointerdown')) }
 const published = (): string | null => document.documentElement.getAttribute(INPUT_MODALITY_ATTRIBUTE)
 const button = (): HTMLButtonElement => {
@@ -87,6 +88,18 @@ describe('input modality', () => {
     window.dispatchEvent(new Event('blur'))
     button().focus()
     expect(published()).toBe(INPUT_MODALITY.pointer)
+  })
+
+  it('ignores synthetic keydown events that carry no key', () => {
+    click()
+    button().focus()
+    expect(published()).toBe(INPUT_MODALITY.pointer)
+    // Extensions and automation tools dispatch bare events without a key field.
+    dispatchKeydown(new Event('keydown'))
+    expect(published()).toBe(INPUT_MODALITY.pointer)
+    press('Tab')
+    button().focus()
+    expect(published()).toBe(INPUT_MODALITY.keyboard)
   })
 
   it('does not interpret input-method navigation as focus navigation', () => {

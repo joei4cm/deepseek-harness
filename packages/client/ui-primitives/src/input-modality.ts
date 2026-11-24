@@ -46,7 +46,8 @@ if (typeof window !== 'undefined') {
   }, true)
   window.addEventListener('keydown', (event) => {
     pointerType = null
-    if (event.isComposing) {
+    // A synthetic event from an extension or automation tool can carry no key.
+    if (event.isComposing || typeof event.key !== 'string') {
       keyFocusOrigin = undefined
       return
     }
