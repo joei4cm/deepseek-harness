@@ -74,7 +74,10 @@ export class LocalFileReferenceService extends FileReferenceService {
       const fiber = this.promptFibers.get(agent)
       if (fiber === undefined) return
       this.promptFibers.delete(agent)
-      const task = fiber.dispose().catch((error: unknown) => {
+      // A bundled Cordis build can return void from fiber.dispose(), and the
+      // call itself may throw synchronously; route both through the same
+      // warning instead of failing the agent/disposed listener.
+      const task = Promise.resolve().then(() => fiber.dispose()).catch((error: unknown) => {
         ctx.logger.warn(`file-reference-local: prompt cleanup failed: ${error instanceof Error ? error.message : String(error)}`)
       })
       this.promptDisposals.add(task)

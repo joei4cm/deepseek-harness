@@ -212,4 +212,20 @@ describe('LocalFileReferenceService', () => {
     })
     await expect(fiber.dispose()).resolves.toBeUndefined()
   })
+
+  it('tolerates a fiber dispose that returns void instead of a Promise', async () => {
+    const ctx = await harness()
+    const fiber = ctx.plugin(LocalFileReferenceService)
+    await fiber
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    const inject = vi.spyOn(ctx, 'inject')
+      .mockReturnValueOnce({ dispose: () => undefined } as never)
+    const { dispose } = await stubAgent(ctx, 'cleanup-void')
+    expect(inject).toHaveBeenCalledOnce()
+    // A bundled Cordis build can return void here; without the wrapping the
+    // TypeError would surface as an agent/disposed listener failure instead.
+    await dispose()
+    await expect(fiber.dispose()).resolves.toBeUndefined()
+    expect(warn).not.toHaveBeenCalled()
+  })
 })
