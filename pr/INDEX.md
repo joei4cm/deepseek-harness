@@ -26,6 +26,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `20-client-pins-persist-settings.md` | `feat/client-pins-persist-settings` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14245` |
 | `21-workspace-navigation-blank-orphans.md` | `fix/workspace-navigation-blank-orphans` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14300` |
 | `22-preview-external-links.md` | `fix/preview-external-links` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14304` |
+| `23-file-reference-prompt-dispose.md` | `fix/file-reference-prompt-dispose` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14314` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
