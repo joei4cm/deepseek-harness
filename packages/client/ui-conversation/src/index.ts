@@ -19,6 +19,7 @@ export type Config = ConversationConfig
 /** Live preferences projected to the browser. */
 export const Config = z.object({
   [BUSY_ENTER_FIELD]: ConversationSettingsFields[BUSY_ENTER_FIELD].volatile(),
+  unpinnedViews: ConversationSettingsFields.unpinnedViews.volatile(),
   maxConcurrentFileUploads: z.natural().min(1).default(2).volatile(),
 })
 

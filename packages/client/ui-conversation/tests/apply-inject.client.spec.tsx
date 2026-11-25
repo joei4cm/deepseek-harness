@@ -121,7 +121,7 @@ async function bench(renderQuote = false) {
     </SessionProvider>
   ) : null)
 
-  const feature = await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', maxConcurrentFileUploads: 2 }))
+  const feature = await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', unpinnedViews: [], maxConcurrentFileUploads: 2 }))
   if (renderQuote) await runtime.mount(messageQuotes)
   runtime.renderRoot()
   const entryOf = (key: 'main.conversation' | 'conversation.session' | 'conversation.session.header' | 'conversation.composer.bar') =>

@@ -6,6 +6,8 @@ import type { BusyEnterBehavior } from './submission-settings.ts'
 export interface ConversationConfig {
   /** Enter key behavior while a turn is running. */
   busyEnter: Volatile<BusyEnterBehavior>
+  /** View ids hidden from the tab bar across Sessions. */
+  unpinnedViews: Volatile<string[]>
   /** Maximum generic-file uploads allowed to run concurrently in browser Workers. */
   maxConcurrentFileUploads: Volatile<number>
 }

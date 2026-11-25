@@ -19,11 +19,16 @@ describe('ui-conversation host', () => {
     const configuration = await liveConfig(ctx, HostPlugin)
     const { fiber } = configuration
     expect(plainConfig(configuration.fiber.effectiveConfig)).toEqual({
-      busyEnter: DEFAULT_BUSY_ENTER_BEHAVIOR, maxConcurrentFileUploads: 2,
+      busyEnter: DEFAULT_BUSY_ENTER_BEHAVIOR, unpinnedViews: [], maxConcurrentFileUploads: 2,
     })
     await configuration.update({ busyEnter: 'steer' })
-    expect(plainConfig(configuration.fiber.effectiveConfig)).toEqual({ busyEnter: 'steer', maxConcurrentFileUploads: 2 })
+    expect(plainConfig(configuration.fiber.effectiveConfig)).toEqual({ busyEnter: 'steer', unpinnedViews: [], maxConcurrentFileUploads: 2 })
+    await configuration.update({ busyEnter: 'steer', unpinnedViews: ['timeline', 'removed-view'] })
+    expect(plainConfig(configuration.fiber.effectiveConfig)).toEqual({
+      busyEnter: 'steer', unpinnedViews: ['timeline', 'removed-view'], maxConcurrentFileUploads: 2,
+    })
     await expect(configuration.update({ busyEnter: 'invalid' })).rejects.toThrow()
+    await expect(configuration.update({ unpinnedViews: [1] })).rejects.toThrow()
     await fiber.dispose()
   })
 })

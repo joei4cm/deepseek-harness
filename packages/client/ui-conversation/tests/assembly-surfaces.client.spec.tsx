@@ -101,7 +101,7 @@ async function bench(opts?: { blank?: boolean }) {
   })
   openSession(SID)
   await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
-  await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', maxConcurrentFileUploads: 2 }))
+  await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', unpinnedViews: [], maxConcurrentFileUploads: 2 }))
   return runtime
 }
 
@@ -116,7 +116,7 @@ describe('resident composer', () => {
     runtime.ctx.provide('shortcuts', { catalog: createSnapshotStore([]) })
     await runtime.mount({ inject: [...injectMenus], apply: applyMenus }, syncedConfig({ resolutionTimeoutMs: 1000 }))
     await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
-    await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', maxConcurrentFileUploads: 2 }))
+    await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', unpinnedViews: [], maxConcurrentFileUploads: 2 }))
     runtime.slots.register({ name: 'conversation.hero.workspace' }, WorkspaceProbe)
     const view = runtime.renderRoot()
     const textarea = view.container.querySelector<HTMLDivElement>('[data-composer-input]')
@@ -148,7 +148,7 @@ describe('resident composer', () => {
       draft.items = [{ workspaceId: 'w1', title: 'Proj', path: '/proj', sessionIds: [SID] }] as never
     })
     await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
-    await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', maxConcurrentFileUploads: 2 }))
+    await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', unpinnedViews: [], maxConcurrentFileUploads: 2 }))
     runtime.slots.register({ name: 'conversation.hero.workspace' }, WorkspaceProbe)
     const view = runtime.renderRoot()
 
@@ -224,7 +224,7 @@ describe('prompt rejection through the assembled composer', () => {
     })
     openSession(SID)
     await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
-    await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', maxConcurrentFileUploads: 2 }))
+    await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', unpinnedViews: [], maxConcurrentFileUploads: 2 }))
     const view = runtime.renderRoot()
 
     const composer = view.container.querySelector<HTMLDivElement>('[data-composer-input]')!

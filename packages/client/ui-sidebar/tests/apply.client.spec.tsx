@@ -10,7 +10,8 @@ import type { SidebarRootInjected, SidebarSectionInjected, UseSectionScroller } 
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { TrackProductEvent } from '@deepseek-ai/dsh-client-product-analytics/client'
 import { HeaderLeadingControls } from '../src/client/HeaderLeadingControls.tsx'
-import { apply as hostApply } from '../src/index.ts'
+import { Config } from '../src/index.ts'
+import { pinSettingsFixture } from './pin-settings-fixture.ts'
 
 const owners = new Set<Fiber>()
 afterEach(async () => {
@@ -35,6 +36,7 @@ async function bench(declare = true) {
   await ctx.plugin(SlotRegistry).await()
   const layout = { toggleSidebar: vi.fn(), selectPanel: vi.fn() }
   const uiWorkspace = { startSession: vi.fn() }
+  ctx.provide('configForms', pinSettingsFixture() as never)
   ctx.provide('shortcuts', { catalog: createSnapshotStore([]) } as never)
   ctx.provide('layout', layout)
   ctx.provide('uiWorkspace', uiWorkspace as never)
@@ -54,12 +56,12 @@ async function bench(declare = true) {
 }
 
 describe('ui-sidebar apply', () => {
-  it('keeps the host Loader entry inert', () => {
-    expect(hostApply).not.toThrow()
+  it('defaults to no unpinned panels', () => {
+    expect(Config({}).unpinnedPanels.get()).toEqual([])
   })
 
   it('declares only the services it uses', () => {
-    expect(inject).toEqual(['slots', 'layout', 'uiWorkspace', 'locale', 'shortcuts'])
+    expect(inject).toEqual(['slots', 'layout', 'uiWorkspace', 'locale', 'shortcuts', 'configForms'])
   })
 
   it('registers the shell and declares its child seats', async () => {

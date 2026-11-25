@@ -186,9 +186,8 @@ export function apply(ctx: Context, config: SyncedConfig<ConversationConfig>): v
   ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-conversation: dictionaries')
   const t = ctx.locale.bind(NS)
   const conversationStore = createConversationStore()
-  const submissionPolicy = new ComposerSubmissionPolicy(
-    ctx.configForms.get<ConversationSettings>(CONVERSATION_SETTINGS_NAMESPACE),
-  )
+  const conversationSettings = ctx.configForms.get<ConversationSettings>(CONVERSATION_SETTINGS_NAMESPACE)
+  const submissionPolicy = new ComposerSubmissionPolicy(conversationSettings)
 
   ctx.effect(() => () => { submissionPolicy.dispose() })
 
@@ -224,7 +223,8 @@ export function apply(ctx: Context, config: SyncedConfig<ConversationConfig>): v
     activateView(sessionId, readConversationViewPreference(sessionId))
   }
   const conversationViews = createSnapshotStore<readonly ViewTab[]>(viewTabs())
-  const viewPins = createViewPins()
+  const viewPins = createViewPins(conversationSettings)
+  ctx.effect(() => () => { viewPins.dispose() })
   const viewActions = {
     getSnapshot: () => slots.entriesOfSlot('conversation.session.header.views.actions').length > 0,
     subscribe: (listener: () => void) => slots.subscribe('conversation.session.header.views.actions', listener),

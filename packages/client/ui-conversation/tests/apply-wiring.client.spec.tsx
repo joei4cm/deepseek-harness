@@ -23,7 +23,9 @@ async function bench(options: { declareConversation?: boolean } = {}) {
     }),
     openSession: vi.fn(),
   } as never)
-  runtime.ctx.provide('configForms', { developerTools: { enabled: developerTools }, get: () => stubConfigForm().scope } as never)
+  const settings = stubConfigForm<{ busyEnter: 'queue' | 'steer'; unpinnedViews: string[] }>()
+  settings.publish({ value: { busyEnter: 'queue', unpinnedViews: ['trajectory'] } })
+  runtime.ctx.provide('configForms', { developerTools: { enabled: developerTools }, get: () => settings.scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
@@ -35,9 +37,9 @@ async function bench(options: { declareConversation?: boolean } = {}) {
       'settings.general.item': { kind: 'list', scope: 'root' },
     }, (_props: { renderSlot?: unknown }) => null)
   }
-  const feature = await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', maxConcurrentFileUploads: 2 }))
+  const feature = await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', unpinnedViews: [], maxConcurrentFileUploads: 2 }))
   if (options.declareConversation !== false) runtime.renderRoot()
-  return { runtime, feature, developerTools }
+  return { runtime, feature, developerTools, settings }
 }
 
 function entry(
@@ -48,7 +50,7 @@ function entry(
 }
 
 describe('target-neutral Conversation apply wiring', () => {
-  it('hands every Session header the same in-memory View pins without restoring saved choices', async () => {
+  it('shares saved View pins across Session headers and writes changes to settings', async () => {
     localStorage.setItem('dsh.slot.manual-order.conversation.view.v1', JSON.stringify({ unpinned: ['trajectory'] }))
     try {
       const b = await bench()
@@ -60,10 +62,11 @@ describe('target-neutral Conversation apply wiring', () => {
       const inject = header.inject as (sessionId: SessionId) => PinHooks
       const injected = inject(SID)
       const first = injected.hooks.entryPins
-      expect(first.getSnapshot()).toEqual([])
+      expect(first.getSnapshot()).toEqual(['trajectory'])
       expect(inject('session-2' as SessionId).hooks.entryPins).toBe(first)
       injected.setPinned('timeline', false)
-      expect(first.getSnapshot()).toEqual(['timeline'])
+      expect(first.getSnapshot()).toEqual(['trajectory', 'timeline'])
+      expect(b.settings.set).toHaveBeenCalledWith('unpinnedViews', ['trajectory', 'timeline'])
       const actions = injected.hooks.entryActions
       const changed = vi.fn()
       actions.subscribe(changed)

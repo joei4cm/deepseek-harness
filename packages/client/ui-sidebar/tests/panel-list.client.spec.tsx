@@ -13,6 +13,7 @@ import type { ILayout, MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/cli
 import type { PropsRenderSlots, PropsRuntime, SlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TrackProductEvent } from '@deepseek-ai/dsh-client-product-analytics/client'
 import { apply, inject } from '../src/client/index.ts'
+import { pinSettingsFixture } from './pin-settings-fixture.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -52,6 +53,7 @@ async function bench(collapsed = false, track?: TrackProductEvent) {
   await runtime.mount({
     inject: ['slots'],
     apply(ctx: Context) {
+      ctx.provide('configForms', pinSettingsFixture() as never)
       ctx.provide('shortcuts', { catalog: createSnapshotStore([]) } as never)
       ctx.provide('layout', layout)
       ctx.provide('uiWorkspace', { startSession: vi.fn() } as never)
