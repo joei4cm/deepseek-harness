@@ -24,6 +24,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `18-shell-signal-exit-status-posix-code.md` | `fix/shell-signal-exit-status-posix-code` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14277` |
 | `19-subprocess-fallback-wait-child-exit.md` | `fix/subprocess-fallback-wait-child-exit` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14259` |
 | `20-client-pins-persist-settings.md` | `feat/client-pins-persist-settings` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14245` |
+| `21-workspace-navigation-blank-orphans.md` | `fix/workspace-navigation-blank-orphans` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14300` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
