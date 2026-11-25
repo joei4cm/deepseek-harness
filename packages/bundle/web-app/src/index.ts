@@ -13,6 +13,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { WriteStream } from 'node:tty'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -58,6 +59,12 @@ export interface Config {
   /** Print the URL lines on activation; a non-interactive layer can turn them off. */
   printUrl: boolean
   /**
+   * Print the one-time login link, whose address carries the launch token.
+   * A deployment without an interactive terminal needs it to sign a browser
+   * in; the link then lives wherever this output is captured.
+   */
+  printLoginUrl: boolean
+  /**
    * Register the `DSH_WEB_URL` bash variable naming this GUI. A one-shot
    * non-interactive layer can turn it off when its user is not in the GUI.
    */
@@ -75,6 +82,7 @@ export interface Config {
 export const Config: z<Config> = z.object({
   openBrowser: z.boolean().default(true),
   printUrl: z.boolean().default(true),
+  printLoginUrl: z.boolean().default(false),
   surfaceContext: z.boolean().default(true),
   publicUrl: z.transform(z.string(), value => parsePublicUrl(value).href),
 })
@@ -142,6 +150,15 @@ function spawnBrowserLauncher(url: string): ChildProcess {
   })
 }
 
+/**
+ * Whether process output reaches an interactive terminal rather than a file or
+ * a pipe. A credential handed to a terminal stays with the operator, while a
+ * redirected stream is a log that any process on the host can read.
+ */
+function stdoutIsInteractive(): boolean {
+  return process.stdout instanceof WriteStream
+}
+
 /** Hand one URL to the operating system's default browser. */
 async function openBrowser(url: string, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted()
@@ -185,7 +202,8 @@ async function openBrowser(url: string, signal?: AbortSignal): Promise<void> {
 export const internals: {
   resolveDistIndex: () => string
   openBrowser: (url: string, signal?: AbortSignal) => Promise<void>
-} = { resolveDistIndex, openBrowser }
+  stdoutIsInteractive: () => boolean
+} = { resolveDistIndex, openBrowser, stdoutIsInteractive }
 
 /**
  * Mount the Web runtime: dist serving, the bash runtime variable, entry URL
@@ -238,15 +256,33 @@ export function apply(ctx: Context, config: Config): void {
       ctx.emit(ctx.webServer, 'webserver/entry-url', appRootUrl(), entries)
       ANNOUNCED_ROOTS.add(ctx[Context.root])
       if (config.printUrl) {
-        for (const entry of entries) console.log(`${entry.label}: ${entry.url}`)
+        for (const entry of entries) {
+          console.log(`${entry.label}: ${entry.url}`)
+          const login = entry.openUrl
+          if (login === undefined) continue
+          // The login link is the only address carrying a credential, and a
+          // credential in process output is a credential in every log that
+          // output is captured by. An interactive terminal keeps the link with
+          // the operator; a redirected stream receives it only when the
+          // deployment asked for it.
+          if (config.printLoginUrl) {
+            console.log(`${entry.label} login link: ${login}`)
+            console.log(`${entry.label}: this login link opens an owner browser session for anyone who reads this output`)
+          } else if (internals.stdoutIsInteractive()) {
+            console.log(`${entry.label} login link: ${login}`)
+          } else {
+            console.log(`${entry.label}: redirected output carries no one-time login link`)
+          }
+        }
       }
       const entry = entries.find(entry => entry.open)
       if (handoffBrowser && entry !== undefined) {
+        const handoffUrl = entry.openUrl ?? entry.url
         console.log('dsh web: opening the default browser; pass --no-open to disable')
-        opening = internals.openBrowser(entry.url, lifetime.signal).catch((error: unknown) => {
+        opening = internals.openBrowser(handoffUrl, lifetime.signal).catch((error: unknown) => {
           if (lifetime.signal.aborted) return
-          const reason = (error instanceof Error ? error.message : String(error)).replaceAll(entry.url, '[login URL]')
-          console.error(`web-app: could not open the default browser because ${reason}; use the dsh web URL printed at startup`)
+          const reason = (error instanceof Error ? error.message : String(error)).replaceAll(handoffUrl, '[login URL]')
+          console.error(`web-app: could not open the default browser because ${reason}; use the one-time login link from the dsh web startup output`)
         })
       }
     }

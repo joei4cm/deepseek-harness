@@ -68,7 +68,7 @@ HTTP 请求在路由查找前经过 `webserver/request(request, response, next)`
 
 已准入的 upgrade 在已注册协议 handler 前经过 `webserver/upgrade(req, socket, head, peer, next)`。waterfall 携带已选定的 Peer，匿名准入可为 `undefined`；被拒绝的请求不会进入。监听器自行处理 Socket，或等待 `next()` 委派。WebServer 等待同步或异步协议 handler，并在中间件或 handler 拒绝时记录日志、销毁该 Socket。Provider 专属 Socket 限制与凭据清理属于监听器，不属于 WebServer 或 Gateway。
 
-`webserver/entry-url(baseUrl, entries)` 根据传入的服务器基地址同步收集完整入口 URL。监听器追加 `{ label, url, open }` 入口。WebApp 在就绪后触发该事件。WebApp 拥有按序打印与首个可自动打开入口的浏览器交接。该事件不认证请求，也不改变监听器或公告地址配置。
+`webserver/entry-url(baseUrl, entries)` 根据传入的服务器基地址同步收集完整入口 URL。监听器追加 `{ label, url, open }` 入口；交接地址与公布地址不同的入口追加 `openUrl`，凭据因此不出现在公布的地址里。WebApp 在就绪后触发该事件。WebApp 拥有按序打印与首个可自动打开入口的浏览器交接。该事件不认证请求，也不改变监听器或公告地址配置。
 
 ### 回退席位
 

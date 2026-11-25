@@ -110,7 +110,7 @@ async function waitForStartup(
   }
   stdout.on('data', (chunk: string) => {
     stdoutText += chunk
-    url ??= /dsh web: (http:\/\/[^\s]+)/u.exec(stdoutText)?.[1]
+    url ??= /dsh web login link: (http:\/\/[^\s]+)/u.exec(stdoutText)?.[1]
     finish()
   })
   stderr.on('data', (chunk: string) => {
@@ -139,6 +139,7 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
       '--profile', 'web',
       '--patch', fixture.patch,
       '--no-open',
+      '--print-login-url',
       '--port', '0',
     ], {
       cwd: fixture.root,

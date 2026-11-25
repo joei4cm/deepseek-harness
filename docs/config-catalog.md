@@ -2159,7 +2159,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-webserver`
 
-- `source`: [`packages/host/webserver/src/index.ts:171`](../packages/host/webserver/src/index.ts)
+- `source`: [`packages/host/webserver/src/index.ts:180`](../packages/host/webserver/src/index.ts)
 
 ```ts config-catalog
 /** Web server listen, TLS, and response-compression config. */
@@ -5347,6 +5347,12 @@ export interface Config {
   openBrowser: boolean
   /** Print the URL lines on activation; a non-interactive layer can turn them off. */
   printUrl: boolean
+  /**
+   * Print the one-time login link, whose address carries the launch token.
+   * A deployment without an interactive terminal needs it to sign a browser
+   * in; the link then lives wherever this output is captured.
+   */
+  printLoginUrl: boolean
   /**
    * Register the `DSH_WEB_URL` bash variable naming this GUI. A one-shot
    * non-interactive layer can turn it off when its user is not in the GUI.

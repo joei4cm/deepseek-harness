@@ -57,11 +57,14 @@ The `minimal` agent preset uses a persistent shell, the `read_image` tool, and a
 | Field | Default | Meaning |
 |---|---|---|
 | `printUrl` | `true` | Print contributed entry URLs after startup settles |
+| `printLoginUrl` | `false` | Print the one-time login link, whose address carries the launch token |
 | `openBrowser` | `true` | Open the first eligible entry after startup, except under SSH |
 | `surfaceContext` | `true` | Expose `DSH_WEB_URL` to the agent's shell commands |
 | `publicUrl` | Unset | Advertised HTTP(S) application root; otherwise announce the bind-address URL |
 
-WebApp owns `printUrl` and `openBrowser`. This bundle enables URL printing and maps the parsed `--no-open` setting to the runtime. After readiness, synchronous `webserver/entry-url` listeners contribute complete entries. WebApp prints every entry as `label: url` when printing is enabled and opens only the first entry marked `open: true` when browser opening is enabled outside SSH. No entries means no output or opening.
+WebApp owns `printUrl`, `printLoginUrl`, and `openBrowser`. This bundle enables URL printing and maps the parsed `--no-open` and `--print-login-url` settings to the runtime. After readiness, synchronous `webserver/entry-url` listeners contribute complete entries. WebApp prints every entry as `label: url` when printing is enabled and opens only the first entry marked `open: true` when browser opening is enabled outside SSH. No entries means no output or opening.
+
+An entry's published address never carries a credential. The launch token rides on the handoff address the browser opens, and that address reaches the operator in one of two ways: the default-browser handoff, which passes it to the operating system outside this process's output, or the printed login link. WebApp prints the login link when `printLoginUrl` is set, and otherwise when the process output is an interactive terminal, because output redirected to a file or a service log is readable by every process on the host. A deployment with neither an interactive terminal nor `printLoginUrl` prints the address alone; its operator signs in from a browser that already holds a session, or passes `--print-login-url` and accepts that the link lands in the captured output.
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-web-app) lists this runtime plugin's accepted fields and their JSDoc. The shipped composition inserts the `schedule` service row and the `ui-schedule` task page row, while the clock reading and the four reminder tools belong to the `standard`, `cordis`, and `ptc` presets. The `tool-subagent` and `tool-subagent-fork` rows in those presets deny the four tools, so a delegated child's scope never lists them. It also inserts the six personalized recommendation rows, from [`action-cards`](../../interaction/action-cards/README.md) to `client-ui-plugin-recommendations`, whose `enabled` switch is in Settings → General.
 

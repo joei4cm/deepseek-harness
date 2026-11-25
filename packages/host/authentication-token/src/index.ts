@@ -151,6 +151,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     })
   })
   ctx.on('webserver/entry-url', (baseUrl, entries) => {
-    entries.push({ label: 'dsh web', url: auth.authenticatedUrl(baseUrl), open: true })
+    // The advertised root is printed; the launch token rides on the handoff
+    // address alone, so startup output never carries a credential that opens
+    // an owner browser session.
+    entries.push({ label: 'dsh web', url: baseUrl, open: true, openUrl: auth.authenticatedUrl(baseUrl) })
   })
 }

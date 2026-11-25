@@ -197,11 +197,12 @@ export default class RemoteConnection extends TypertRemoteService {
     this.owner.emit(this.owner.webServer, 'webserver/entry-url', baseUrl, entries)
     const root = new URL(baseUrl)
     const entry = entries.find((candidate) => {
-      const url = new URL(candidate.url)
+      // The credential rides on the handoff address; the printed address keeps none.
+      const url = new URL(candidate.openUrl ?? candidate.url)
       return url.origin === root.origin && url.pathname === root.pathname
         && url.searchParams.getAll('token').length === 1 && Boolean(url.searchParams.get('token'))
     })
-    return entry?.url
+    return entry?.openUrl ?? entry?.url
   }
 
   /**

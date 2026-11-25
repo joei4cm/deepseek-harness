@@ -8,9 +8,10 @@ import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
 import { apply, type Config, internals } from '../src/index.ts'
 
 const originalOpen = internals.openBrowser
-afterEach(() => { internals.openBrowser = originalOpen; vi.restoreAllMocks() })
+const originalInteractive = internals.stdoutIsInteractive
+afterEach(() => { internals.openBrowser = originalOpen; internals.stdoutIsInteractive = originalInteractive; vi.restoreAllMocks() })
 
-async function setup(options: { origin?: string; ssh?: 'SSH_CONNECTION' | 'SSH_TTY'; settle?: () => Promise<void> } = {}) {
+async function setup(options: { origin?: string; ssh?: 'SSH_CONNECTION' | 'SSH_TTY'; settle?: () => Promise<void>; interactive?: boolean } = {}) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([
@@ -24,31 +25,61 @@ async function setup(options: { origin?: string; ssh?: 'SSH_CONNECTION' | 'SSH_T
   ctx.provide('webServer', server as WebServer)
   const baseUrl = () => options.origin ?? 'http://127.0.0.1:3080/'
   const auth = { authenticatedUrl: (url: string) => `${url}?token=fixture-token` }
-  const removeEntry = ctx.on('webserver/entry-url', (url, entries) => { entries.push({ label: 'dsh web', url: auth.authenticatedUrl(url), open: true }) })
+  const removeEntry = ctx.on('webserver/entry-url', (url, entries) => {
+    entries.push({ label: 'dsh web', url, open: true, openUrl: auth.authenticatedUrl(url) })
+  })
   const log = vi.spyOn(console, 'log').mockImplementation(() => {})
   const error = vi.spyOn(console, 'error').mockImplementation(() => {})
   const open = vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined)
   internals.openBrowser = open
+  internals.stdoutIsInteractive = () => options.interactive ?? false
   return { ctx, auth, log, error, open, baseUrl, removeEntry }
 }
 
+it('reports whether process output is an interactive terminal', () => {
+  expect(typeof internals.stdoutIsInteractive()).toBe('boolean')
+})
+
 /** Exercise startup through the same plugin entry as the Loader. */
-function publishStartup(ctx: Context, config: Pick<Config, 'printUrl' | 'openBrowser'>, baseUrl: () => string): void {
-  apply(ctx, { ...config, publicUrl: baseUrl(), surfaceContext: false })
+function publishStartup(
+  ctx: Context,
+  config: Pick<Config, 'printUrl' | 'openBrowser'> & { printLoginUrl?: boolean },
+  baseUrl: () => string,
+): void {
+  apply(ctx, { ...config, printLoginUrl: config.printLoginUrl ?? false, publicUrl: baseUrl(), surfaceContext: false })
 }
 
-it('prints and opens its authenticated advertised URL in order', async () => {
-  const { ctx, baseUrl, auth, log, open } = await setup({ origin: 'https://public.test/ui/' })
+it('prints the advertised address and opens the credential-bearing entry', async () => {
+  const { ctx, baseUrl, auth, log, open } = await setup({ origin: 'https://public.test/ui/', interactive: true })
   const events: string[] = []
   log.mockImplementation((value) => { events.push(String(value)) })
   open.mockImplementation((url) => { events.push(`open:${url}`); return Promise.resolve() })
   publishStartup(ctx, { printUrl: true, openBrowser: true }, baseUrl)
   const expected = auth.authenticatedUrl('https://public.test/ui/')
   await vi.waitFor(() => { expect(events).toEqual([
-    `dsh web: ${expected}`,
+    'dsh web: https://public.test/ui/',
+    `dsh web login link: ${expected}`,
     'dsh web: opening the default browser; pass --no-open to disable',
     `open:${expected}`,
   ]) })
+})
+
+it('keeps the launch token out of redirected startup output', async () => {
+  const { ctx, baseUrl, auth, log, open } = await setup()
+  publishStartup(ctx, { printUrl: true, openBrowser: true }, baseUrl)
+  await vi.waitFor(() => { expect(open).toHaveBeenCalledOnce() })
+  const printed = log.mock.calls.map(call => String(call[0])).join('\n')
+  expect(printed).toContain('dsh web: http://127.0.0.1:3080/')
+  expect(printed).not.toContain(auth.authenticatedUrl('http://127.0.0.1:3080/'))
+})
+
+it('prints the login link when the deployment asks for it', async () => {
+  const { ctx, baseUrl, auth, log, open } = await setup()
+  publishStartup(ctx, { printUrl: true, openBrowser: false, printLoginUrl: true }, baseUrl)
+  await vi.waitFor(() => { expect(log).toHaveBeenCalledTimes(3) })
+  expect(log).toHaveBeenCalledWith(`dsh web login link: ${auth.authenticatedUrl('http://127.0.0.1:3080/')}`)
+  expect(log.mock.calls.map(call => String(call[0])).join('\n')).toContain('anyone who reads this output')
+  expect(open).not.toHaveBeenCalled()
 })
 
 it('keeps startup dormant when both flags are disabled', async () => {
@@ -61,14 +92,16 @@ it('keeps startup dormant when both flags are disabled', async () => {
 it.each(['SSH_CONNECTION', 'SSH_TTY'] as const)('prints without opening when %s marks SSH', async (ssh) => {
   const remote = await setup({ ssh })
   publishStartup(remote.ctx, { printUrl: true, openBrowser: true }, remote.baseUrl)
-  await vi.waitFor(() => { expect(remote.log).toHaveBeenCalledWith(`dsh web: ${remote.auth.authenticatedUrl('http://127.0.0.1:3080/')}`) })
+  await vi.waitFor(() => { expect(remote.log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:3080/') })
+  expect(remote.log.mock.calls.flat().join(' ')).not.toContain(remote.auth.authenticatedUrl('http://127.0.0.1:3080/'))
   expect(remote.open).not.toHaveBeenCalled()
 })
 
-it('honors no-open while still printing the login URL', async () => {
-  const { ctx, baseUrl, log, open } = await setup()
+it('honors no-open while still printing the login link', async () => {
+  const { ctx, baseUrl, log, open } = await setup({ interactive: true })
   publishStartup(ctx, { printUrl: true, openBrowser: false }, baseUrl)
-  await vi.waitFor(() => { expect(log).toHaveBeenCalledOnce() })
+  await vi.waitFor(() => { expect(log).toHaveBeenCalledTimes(2) })
+  expect(log).toHaveBeenCalledWith('dsh web login link: http://127.0.0.1:3080/?token=fixture-token')
   expect(open).not.toHaveBeenCalled()
 })
 
@@ -134,12 +167,12 @@ it('joins a cancelled browser handoff without reporting it as a launch failure',
 
 it('publishes after successful Loader settlement', async () => {
   const gate = Promise.withResolvers<undefined>()
-  const { ctx, baseUrl, auth, log, open } = await setup({ settle: () => gate.promise })
+  const { ctx, baseUrl, log, open } = await setup({ settle: () => gate.promise })
   publishStartup(ctx, { printUrl: true, openBrowser: true }, baseUrl)
   expect(log).not.toHaveBeenCalled()
   gate.resolve(undefined)
   await vi.waitFor(() => { expect(open).toHaveBeenCalledOnce() })
-  expect(log).toHaveBeenCalledWith(`dsh web: ${auth.authenticatedUrl('http://127.0.0.1:3080/')}`)
+  expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:3080/')
 })
 
 it('collects an entry registered while application readiness is pending', async () => {
@@ -186,45 +219,46 @@ it.each([
   await vi.waitFor(() => { expect(audit).toHaveBeenCalledOnce() })
   await Promise.allSettled(audit.mock.results.map(result => result.value as Promise<void>))
   expect(open).toHaveBeenCalledTimes(announces ? 1 : 0)
-  expect(log).toHaveBeenCalledTimes(announces ? 2 : 0)
+  expect(log).toHaveBeenCalledTimes(announces ? 3 : 0)
 })
 
 it('publishes at most once across WebApp reloads in the same application', async () => {
   const { ctx, baseUrl, log, open } = await setup()
-  const config = { printUrl: true, openBrowser: true, publicUrl: baseUrl(), surfaceContext: false }
+  const config = { printUrl: true, openBrowser: true, printLoginUrl: false, publicUrl: baseUrl(), surfaceContext: false }
   const first = ctx.plugin({ apply }, config)
   await first.await()
   await first.dispose()
   await ctx.plugin({ apply }, config).await()
-  expect(log).toHaveBeenCalledTimes(2)
+  expect(log).toHaveBeenCalledTimes(3)
   expect(open).toHaveBeenCalledOnce()
 })
 
 it.each([new Error('launcher unavailable'), 'launcher unavailable'])('reports opener failure without disclosing the token: %s', async (failure) => {
-  const { ctx, baseUrl, auth, error, open } = await setup()
+  const { ctx, baseUrl, auth, error, open } = await setup({ interactive: true })
   open.mockRejectedValue(failure)
   publishStartup(ctx, { printUrl: true, openBrowser: true }, baseUrl)
   await vi.waitFor(() => { expect(error).toHaveBeenCalledOnce() })
-  expect(error).toHaveBeenCalledWith('web-app: could not open the default browser because launcher unavailable; use the dsh web URL printed at startup')
+  expect(error).toHaveBeenCalledWith('web-app: could not open the default browser because launcher unavailable; use the one-time login link from the dsh web startup output')
   expect(error.mock.calls.flat().join(' ')).not.toContain(new URL(auth.authenticatedUrl('http://localhost')).searchParams.get('token'))
 })
 
 
 it('prints all contributed entries and opens only the first eligible entry', async () => {
-  const { ctx, baseUrl, removeEntry, log, open } = await setup()
+  const { ctx, baseUrl, removeEntry, log, open } = await setup({ interactive: true })
   removeEntry()
   ctx.on('webserver/entry-url', (base, entries) => {
     expect(base).toBe(baseUrl())
     entries.push({ label: 'dsh remote', url: 'https://remote.test/invite', open: false })
   })
   ctx.on('webserver/entry-url', (_base, entries) => {
-    entries.push({ label: 'dsh web', url: 'https://web.test/?token=first', open: true })
+    entries.push({ label: 'dsh web', url: 'https://web.test/', open: true, openUrl: 'https://web.test/?token=first' })
     entries.push({ label: 'dsh other', url: 'https://other.test/', open: true })
   })
   publishStartup(ctx, { printUrl: true, openBrowser: true }, baseUrl)
   expect(log.mock.calls.map(call => String(call[0]))).toEqual([
     'dsh remote: https://remote.test/invite',
-    'dsh web: https://web.test/?token=first',
+    'dsh web: https://web.test/',
+    'dsh web login link: https://web.test/?token=first',
     'dsh other: https://other.test/',
     'dsh web: opening the default browser; pass --no-open to disable',
   ])

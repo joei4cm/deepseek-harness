@@ -68,7 +68,7 @@ HTTP requests pass through `webserver/request(request, response, next)` before r
 
 Admitted upgrades pass through `webserver/upgrade(req, socket, head, peer, next)` before their registered protocol handler. The waterfall carries the already selected Peer, or `undefined` for anonymous admission; denied requests never enter it. A listener handles the Socket itself or awaits `next()` to delegate. WebServer awaits synchronous or asynchronous protocol handlers and contains rejected middleware or handlers by logging and destroying that Socket. Provider-specific Socket limits and credential cleanup belong to listeners, not to WebServer or Gateway.
 
-`webserver/entry-url(baseUrl, entries)` synchronously collects complete entry URLs for a supplied server base URL. Listeners append `{ label, url, open }` entries. WebApp emits it after readiness. WebApp owns ordered printing and the first eligible browser handoff. This event neither authenticates requests nor changes the listener or advertised-address configuration.
+`webserver/entry-url(baseUrl, entries)` synchronously collects complete entry URLs for a supplied server base URL. Listeners append `{ label, url, open }` entries; an entry whose handoff address differs from the published one adds `openUrl`, which keeps a credential out of the published address. WebApp emits it after readiness. WebApp owns ordered printing and the first eligible browser handoff. This event neither authenticates requests nor changes the listener or advertised-address configuration.
 
 ### The fallback seat
 

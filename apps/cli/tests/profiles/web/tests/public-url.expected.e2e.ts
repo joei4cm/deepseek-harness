@@ -47,6 +47,7 @@ function spawnWeb(root: string, patch: string, interrupt: string, flags: string[
     '--profile', 'web',
     '--patch', patch,
     '--no-open',
+    '--print-login-url',
     '--port', '0',
     ...flags,
   ], {
@@ -113,7 +114,7 @@ async function bootWeb(root: string, flags: string[]): Promise<RunningWeb> {
   }
   lines.on('line', (line) => {
     if (line.startsWith('public-url-listen-port: ')) port = Number(line.slice('public-url-listen-port: '.length))
-    if (line.startsWith('dsh web: http')) startup = new URL(line.slice('dsh web: '.length))
+    if (line.startsWith('dsh web login link: ')) startup = new URL(line.slice('dsh web login link: '.length))
     announced()
   })
   void child.then((result) => {

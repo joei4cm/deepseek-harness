@@ -62,7 +62,7 @@ export async function withDefaultWeb(
       mode: 'lib',
       configArgs: [
         '--profile', 'web', ...options.patches?.flatMap(path => ['--patch', path]) ?? [],
-        '--patch', patch, '--host', '127.0.0.1', '--port', '0', '--no-open',
+        '--patch', patch, '--host', '127.0.0.1', '--port', '0', '--no-open', '--print-login-url',
       ],
       env: {
         NODE_OPTIONS: undefined,
@@ -152,9 +152,9 @@ export async function withDefaultWeb(
       await expect.poll(() => {
         test.signal.throwIfAborted()
         if (exited) throw new Error(`Web exited before readiness\n${stdout}\n${stderr}`)
-        return /dsh web: (http:\/\/[^\s]+)/u.exec(stdout)?.[1]
+        return /dsh web login link: (http:\/\/[^\s]+)/u.exec(stdout)?.[1]
       }, { timeout: test.task.timeout }).toBeDefined()
-      const url = /dsh web: (http:\/\/[^\s]+)/u.exec(stdout)![1]!
+      const url = /dsh web login link: (http:\/\/[^\s]+)/u.exec(stdout)![1]!
       await inspect({ root, url, request })
     } finally {
       const result = await close()

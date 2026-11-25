@@ -75,7 +75,7 @@ function waitForReadyLine(child: ChildProcess): Promise<string> {
     const timer = setTimeout(() => { reject(new Error(`dsh web not ready in 90s; output:\n${out}`)) }, 90_000)
     const onData = (chunk: Buffer): void => {
       out += chunk.toString()
-      const match = /dsh web: (http:\/\/[^\s]+)/.exec(out)
+      const match = /dsh web login link: (http:\/\/[^\s]+)/.exec(out)
       if (match?.[1] !== undefined) {
         clearTimeout(timer)
         resolveReady(match[1])
@@ -317,7 +317,7 @@ describe('dsh web keyless CLI smoke', () => {
     const tsxLoader = pathToFileURL(createRequire(join(REPO_ROOT, 'package.json')).resolve('tsx')).href
     const child = spawn(
       process.execPath,
-      ['--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web', '--no-open', '--port', '0'],
+      ['--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web', '--no-open', '--print-login-url', '--port', '0'],
       {
         cwd: sessionsDir,
         env: {
@@ -439,7 +439,7 @@ describe('dsh web keyless CLI smoke', () => {
     const tsxLoader = pathToFileURL(createRequire(join(REPO_ROOT, 'package.json')).resolve('tsx')).href
     const child = spawn(
       process.execPath,
-      ['--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web', '--no-open', '--port', '0'],
+      ['--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web', '--no-open', '--print-login-url', '--port', '0'],
       {
         cwd: workspace,
         env: {
@@ -552,7 +552,7 @@ describe('dsh web keyless CLI smoke', () => {
     const tsxLoader = pathToFileURL(createRequire(join(REPO_ROOT, 'package.json')).resolve('tsx')).href
     const child = spawn(
       process.execPath,
-      ['--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web', '--no-open', '--port', '0'],
+      ['--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web', '--no-open', '--print-login-url', '--port', '0'],
       {
         cwd: workspace,
         env: {
@@ -639,7 +639,7 @@ describe('dsh web keyless CLI smoke', () => {
       process.execPath,
       ['--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web',
         ...mode === 'ptc' ? ['--patch', join(REPO_ROOT, 'apps/cli/config/examples/ptc.yml')] : [],
-        '--no-open', '--port', '0',
+        '--no-open', '--print-login-url', '--port', '0',
       ],
       {
         cwd: workspace,
@@ -727,6 +727,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
         // the native OS chooser on this bind, and no page can drive that.
         '--patch', fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
         '--no-open',
+        '--print-login-url',
         '--port', String(port),
       ],
       {

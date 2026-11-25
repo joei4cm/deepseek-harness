@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用方式
 
-将此函数插件与 Connection 和 Credentials 一同挂载。它还注入由 Connection 插件提供的 `connection.authentication`。存在 WebServer 时提供 HTTP 交换路由；认证 Provider 也能用于没有 Web 监听器的组合。插件通过 `webserver/entry-url` 贡献带签名的 `dsh web` 入口；打印与浏览器打开归 WebApp。包运行入口导出 `name`、`inject`、`Config` 和 `apply`。
+将此函数插件与 Connection 和 Credentials 一同挂载。它还注入由 Connection 插件提供的 `connection.authentication`。存在 WebServer 时提供 HTTP 交换路由；认证 Provider 也能用于没有 Web 监听器的组合。插件通过 `webserver/entry-url` 贡献 `dsh web` 入口：公布的地址不含 token，带签名的地址是该入口的浏览器交接目标。打印与浏览器打开归 WebApp。包运行入口导出 `name`、`inject`、`Config` 和 `apply`。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
@@ -51,7 +51,7 @@ kind: "package-reference"
 
 插件准备签发器，通过 Connection 创建共享 Peer，并通过 `ctx.connection.authentication` 注册验证器：v1 Cookie 返回共享 Peer，v2 ID 验签后通过插件自己的 API Peer 映射表解析。页面与 API 调用使用相同验证。WebServer 请求监听器拥有根 Token 交换，匿名精确路由拥有 `/connect`。
 
-该路由旁的 `webserver/upgrade` 监听器委派非 mux 路径，并在 `/api/remote.mux` 上按 `apiPeers.get(peer.id) === peer` 识别自己拥有的 API Peer；浏览器共享 Peer 与其他 Provider 调用 `next()` 委派。此监听器位于路由准入后、协议处理前。Socket 关闭、错误及 upgrade 失败时，在异步释放前撤销 API 凭据。Peer 释放也会关闭其 Socket。清理幂等；Web 接线作用域移除监听器、撤销自己的 API 凭据、仅销毁自己拥有的 API Socket，并等待 Socket 关闭与 Peer 清理。迟到的中间件不能恢复已撤销的 Peer。同步 `webserver/entry-url` 监听器贡献带签名的 URL；事件和入口类型由 WebServer 声明，无需依赖 WebApp bundle。
+该路由旁的 `webserver/upgrade` 监听器委派非 mux 路径，并在 `/api/remote.mux` 上按 `apiPeers.get(peer.id) === peer` 识别自己拥有的 API Peer；浏览器共享 Peer 与其他 Provider 调用 `next()` 委派。此监听器位于路由准入后、协议处理前。Socket 关闭、错误及 upgrade 失败时，在异步释放前撤销 API 凭据。Peer 释放也会关闭其 Socket。清理幂等；Web 接线作用域移除监听器、撤销自己的 API 凭据、仅销毁自己拥有的 API Socket，并等待 Socket 关闭与 Peer 清理。迟到的中间件不能恢复已撤销的 Peer。同步 `webserver/entry-url` 监听器把带签名的地址作为入口的交接目标贡献出来；事件和入口类型由 WebServer 声明，无需依赖 WebApp bundle。
 
 原启动 Token 寿命与 Cookie 算法保留在内部 [BrowserAuth 实现](src/browser-auth.ts)。[插件入口](src/index.ts)负责 Connection、ConnectionAuthentication 与 WebServer 接线，[内部类型](src/types.ts)描述签发器使用的 HTTP 操作。
 

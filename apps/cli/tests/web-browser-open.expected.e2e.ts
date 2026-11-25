@@ -89,7 +89,7 @@ describe.skipIf(!builtArtifactsExist)('dsh web browser-open assembled snapshot',
         "exitCode": 0,
         "openedUrl": "http://127.0.0.1:{{port}}/?token={{token}}",
         "opening": true,
-        "readyUrl": "http://127.0.0.1:{{port}}/?token={{token}}",
+        "readyUrl": "http://127.0.0.1:{{port}}/",
         "status": 200,
         "stderr": "",
       }
@@ -135,11 +135,11 @@ describe.skipIf(!builtArtifactsExist)('dsh web browser-open assembled snapshot',
       readyUrl: readyUrl === undefined ? undefined : normalizeLocalUrl(readyUrl),
     }).toMatchInlineSnapshot(`
       {
-        "diagnostic": "web-app: could not open the default browser because fixture desktop unavailable; use the dsh web URL printed at startup",
+        "diagnostic": "web-app: could not open the default browser because fixture desktop unavailable; use the one-time login link from the dsh web startup output",
         "exitCode": 0,
         "opened": false,
         "opening": true,
-        "readyUrl": "http://127.0.0.1:{{port}}/?token={{token}}",
+        "readyUrl": "http://127.0.0.1:{{port}}/",
       }
     `)
   })
@@ -184,7 +184,7 @@ describe.skipIf(!builtArtifactsExist)('dsh web browser-open assembled snapshot',
         "exitCode": 0,
         "opened": false,
         "opening": false,
-        "readyUrl": "http://127.0.0.1:{{port}}/?token={{token}}",
+        "readyUrl": "http://127.0.0.1:{{port}}/",
         "stderr": "",
       }
     `)

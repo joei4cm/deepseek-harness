@@ -71,6 +71,7 @@ async function startWeb(root: string, dshHome: string, port: number): Promise<Ru
     DSH_SOURCE_BIN,
     'web',
     '--no-open',
+    '--print-login-url',
     '--port', String(port),
   ], {
     cwd: root,
@@ -91,7 +92,7 @@ async function startWeb(root: string, dshHome: string, port: number): Promise<Ru
     }, 90_000)
     const append = (chunk: Buffer | string): void => {
       output = `${output}${String(chunk)}`.slice(-100_000)
-      const match = /dsh web: (http:\/\/[^\s]+)/u.exec(output)
+      const match = /dsh web login link: (http:\/\/[^\s]+)/u.exec(output)
       if (settled || match?.[1] === undefined) return
       settled = true
       clearTimeout(timer)

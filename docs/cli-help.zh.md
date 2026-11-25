@@ -187,6 +187,9 @@ Options:
                                  of a local interface; wildcard addresses are
                                  rejected
   --no-open                      do not open the Web UI in the default browser
+  --print-login-url              print the one-time login link beside the
+                                 startup URL; anyone who reads this output can
+                                 open an owner session
   --port <port>                  listen port; pass 0 to let the OS pick a free
                                  one
   --public-url <url>             advertise this HTTP(S) root in the printed,
@@ -203,6 +206,7 @@ Options:
 Examples:
   dsh --profile web                          serve on the composed host and port
   dsh --profile web --no-open                serve without opening a browser
+  dsh --profile web --print-login-url        also print the one-time login link
   dsh --profile web --port 8080              serve on another port
   dsh --profile web --host 10.0.0.7          bind one local interface address
   dsh --profile web --public-url https://app.example/ui/ --trusted-host app.example

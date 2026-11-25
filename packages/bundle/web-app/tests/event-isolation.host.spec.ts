@@ -27,7 +27,7 @@ it.each(['main', 'isolated'] as const)('publishes only %s entry URLs and explici
   })
   const target = selected === 'main' ? ctx : isolated
   const origin = target.webServer.getOrigin()
-  await target.plugin(WebApp, { printUrl: true, openBrowser: false, surfaceContext: false }).await()
+  await target.plugin(WebApp, { printUrl: true, openBrowser: false, printLoginUrl: false, surfaceContext: false }).await()
   expect(log.mock.calls).toEqual([[`global: ${origin}/global`], [`${selected}: ${origin}/${selected}`]])
 })
 

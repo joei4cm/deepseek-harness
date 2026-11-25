@@ -868,14 +868,14 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     const entries: WebEntryUrl[] = []
     ctx.emit(ctx.webServer, 'webserver/entry-url', advertised.href, entries)
     const tokenEntries = entries.filter((entry) => {
-      const url = new URL(entry.url)
+      const url = new URL(entry.openUrl ?? entry.url)
       return url.origin === advertised.origin && url.pathname === advertised.pathname
         && url.searchParams.getAll('token').length === 1 && Boolean(url.searchParams.get('token'))
     })
     if (tokenEntries.length !== 1) {
       throw new Error('web e2e scaffold: expected one Token provider login URL for this application')
     }
-    const startupLoginUrl = new URL(tokenEntries[0]!.url)
+    const startupLoginUrl = new URL(tokenEntries[0]!.openUrl ?? tokenEntries[0]!.url)
     if (options.developerTools !== undefined) {
       await ctx.settings.update('ui-settings', { enabled: options.developerTools })
     }

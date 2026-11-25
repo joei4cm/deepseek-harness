@@ -221,7 +221,12 @@ it('contributes its complete login URL only while the provider is mounted', asyn
   const { ctx, fiber, auth } = await mounted()
   const entries: WebEntryUrl[] = []
   ctx.emit('webserver/entry-url', 'https://public.test/ui/', entries)
-  expect(entries).toEqual([{ label: 'dsh web', url: auth.authenticatedUrl('https://public.test/ui/'), open: true }])
+  expect(entries).toEqual([{
+    label: 'dsh web',
+    url: 'https://public.test/ui/',
+    open: true,
+    openUrl: auth.authenticatedUrl('https://public.test/ui/'),
+  }])
   await fiber.dispose()
   const after: WebEntryUrl[] = []
   ctx.emit('webserver/entry-url', 'https://public.test/ui/', after)

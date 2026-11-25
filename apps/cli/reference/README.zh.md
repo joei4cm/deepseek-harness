@@ -124,7 +124,9 @@ dsh web --dump-config
 dsh web --help
 ```
 
-生产 Web 运行器需要已构建的包和前端产物（`pnpm run build`）。配置了 `--public-url` 时打印公告地址，否则打印采用监听器协议的绑定地址 URL（默认为 `http://127.0.0.1:3080`，配置 TLS 时为 `https://`）。Host/Origin 栅栏直接接受绑定 IP；代理或 DNS authority 仍需 `--trusted-host`。启动日志与默认浏览器交接都会等待完整 Loader 配置树结算。继承的 `SSH_CONNECTION` 或 `SSH_TTY` 非空时会抑制浏览器打开，但仍打印启动 URL。浏览器交接前会打印 `dsh web: opening the default browser; pass --no-open to disable`；若操作系统交接失败，stderr 会说明原因并指向启动 URL，服务器仍继续运行。
+生产 Web 运行器需要已构建的包和前端产物（`pnpm run build`）。配置了 `--public-url` 时打印公告地址，否则打印采用监听器协议的绑定地址 URL（默认为 `http://127.0.0.1:3080`，配置 TLS 时为 `https://`）。Host/Origin 栅栏直接接受绑定 IP；代理或 DNS authority 仍需 `--trusted-host`。启动日志与默认浏览器交接都会等待完整 Loader 配置树结算。继承的 `SSH_CONNECTION` 或 `SSH_TTY` 非空时会抑制浏览器打开，但仍打印启动 URL。浏览器交接前会打印 `dsh web: opening the default browser; pass --no-open to disable`；若操作系统交接失败，stderr 会说明原因并指向一次性登录链接，服务器仍继续运行。
+
+启动行打印的是不含启动 token 的公告地址。携带该 token 的一次性登录链接打印在单独的 `dsh web login link:` 行上：输出为交互式终端时打印，否则只有传入 `--print-login-url` 才打印。任何读到该链接的人都能打开 owner 浏览器会话，因此重定向的输出默认不携带它。
 
 进程关闭时，插件树最多有 5 秒完成 dispose。首次收到 `SIGINT` 或 `SIGTERM` 时会开始优雅排空：`SIGTERM` 是监督进程发出的常规停止请求，在所有运行模式下都以 0 退出；`SIGINT` 则报告 130。第二次收到信号时会立即强制退出。如果一次性运行在正常结束时已经卡在 dispose 阶段，第一次按下 `Ctrl+C` 就会直接升级为强制退出，而不会被忽略。
 

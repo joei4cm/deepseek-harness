@@ -11624,7 +11624,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WebEntryUrl',
-    declaration: 'export interface WebEntryUrl {\n    readonly label: string;\n    readonly url: string;\n    readonly open: boolean;\n}',
+    declaration: 'export interface WebEntryUrl {\n    readonly label: string;\n    readonly url: string;\n    readonly open: boolean;\n    readonly openUrl?: string;\n}',
   },
   {
     name: 'WebFallback',

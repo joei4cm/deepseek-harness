@@ -26,7 +26,7 @@ class RestartableServer {
       join(REPO_ROOT, 'apps/cli/lib/bin.js'), '--profile', 'web',
       '--patch', fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
       '--patch', fileURLToPath(new URL('./fixtures/restart-startup.overlay.yml', import.meta.url)),
-      '--no-open', '--port', String(port),
+      '--no-open', '--print-login-url', '--port', String(port),
     ], {
       cwd: this.world,
       env: {
@@ -41,7 +41,7 @@ class RestartableServer {
     this.child = child
     const receive = (data: Buffer): void => {
       this.output += data.toString()
-      const url = /dsh web: (http:\/\/[^\s]+)/u.exec(this.output)?.[1]
+      const url = /dsh web login link: (http:\/\/[^\s]+)/u.exec(this.output)?.[1]
       if (url !== undefined) ready.resolve(url)
     }
     child.stdout?.on('data', receive)

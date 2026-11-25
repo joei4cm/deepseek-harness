@@ -88,7 +88,7 @@ export async function launchRemoteConnectionFixture(secure: boolean, ticketLifet
       bin, 'web',
       '--patch', join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml'),
       '--patch', overlay,
-      '--no-open', '--host', '127.0.0.1', '--port', '0',
+      '--no-open', '--print-login-url', '--host', '127.0.0.1', '--port', '0',
       '--trusted-host', 'qr-login.test',
       ...tls === undefined ? [] : ['--tls-cert', tls.certFile, '--tls-key', tls.keyFile],
     ], { cwd: workspace, env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -106,7 +106,7 @@ export async function launchRemoteConnectionFixture(secure: boolean, ticketLifet
       processHandle.stderr.setEncoding('utf8')
       processHandle.stdout.on('data', (chunk: string) => {
         output += chunk
-        const published = /dsh web: (https?:\/\/qr-login\.test:\d+\/[^\s]*)/.exec(output)?.[1]
+        const published = /dsh web login link: (https?:\/\/qr-login\.test:\d+\/[^\s]*)/.exec(output)?.[1]
         if (published !== undefined) settle(published)
       })
       processHandle.stderr.on('data', (chunk: string) => { output += chunk })

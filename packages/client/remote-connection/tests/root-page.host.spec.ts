@@ -223,7 +223,8 @@ it('keeps Token entries and source refusals within their WebServer isolation', a
   const isolatedEntries: WebEntryUrl[] = []
   isolated.emit(isolated.webServer, 'webserver/entry-url', publicUrl, isolatedEntries)
   expect(isolatedEntries).toHaveLength(1)
-  expect(new URL(isolatedEntries[0]!.url).searchParams.get('token')).toMatch(/^[A-Za-z0-9_-]{43}$/u)
+  expect(new URL(isolatedEntries[0]!.openUrl!).searchParams.get('token')).toMatch(/^[A-Za-z0-9_-]{43}$/u)
+  expect(new URL(isolatedEntries[0]!.url).searchParams.has('token')).toBe(false)
 
   expect(service.status(null)).toMatchObject({ url: publicUrl, availability: 'available' })
   expect(() => service.loginUrl()).toThrow(expect.objectContaining({ code: 'remote-connection/token-unavailable' }))

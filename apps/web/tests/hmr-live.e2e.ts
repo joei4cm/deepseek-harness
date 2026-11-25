@@ -117,14 +117,14 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
     ))
     await waitForOutput(watcher, /dev-web: watching/, 'pnpm run dev:web --skip-build --no-serve')
     host = subprocessCtx.subprocess.spawn(spawnSpec(
-      [process.execPath, binPath, 'web', '--no-open', '--port', '0'],
+      [process.execPath, binPath, 'web', '--no-open', '--print-login-url', '--port', '0'],
       world,
       {
         DEEPSEEK_API_KEY: 'keyless-hmr-no-call',
         DSH_HOME: join(world, '.dsh'),
       },
     ))
-    const baseUrl = await waitForOutput(host, /dsh web: (http:\/\/[^\s]+)/, 'built dsh web')
+    const baseUrl = await waitForOutput(host, /dsh web login link: (http:\/\/[^\s]+)/, 'built dsh web')
     browser = await chromium.launch()
     const page = await browser.newPage()
     const pageErrors: string[] = []

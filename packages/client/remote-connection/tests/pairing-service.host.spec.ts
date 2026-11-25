@@ -453,9 +453,10 @@ it('keeps paired Remote credentials independent from Token through provider unlo
   }))
   const entries: WebEntryUrl[] = []
   ctx.emit(ctx.webServer, 'webserver/entry-url', 'http://pair.test/', entries)
-  const entry = entries.find(candidate => new URL(candidate.url).searchParams.has('token'))
+  const entry = entries.find(candidate => new URL(candidate.openUrl ?? candidate.url).searchParams.has('token'))
   if (entry === undefined) throw new Error('Token entry URL was not published')
-  const tokenResponse = await send(new URL(entry.url).pathname + new URL(entry.url).search)
+  const tokenUrl = new URL(entry.openUrl ?? entry.url)
+  const tokenResponse = await send(tokenUrl.pathname + tokenUrl.search)
   expect(tokenResponse.status).toBe(303)
   const tokenCookie = tokenResponse.headers.get('set-cookie')!.split(';', 1)[0]!
   const tokenAdmission = ctx.connection.admit({ headers: { host: 'pair.test', cookie: tokenCookie } })

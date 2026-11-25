@@ -33,10 +33,19 @@ export type { IndexInjection, IndexInjectionPlacement } from './injections.ts'
 export interface WebEntryUrl {
   /** Output prefix, such as `dsh web`. */
   readonly label: string
-  /** Complete entry URL, including any credentials required by its provider. */
+  /**
+   * Complete entry URL without a credential. Startup output prints this
+   * address, so it must stay readable to anyone watching that output.
+   */
   readonly url: string
   /** Whether this entry is eligible for the application's automatic browser handoff. */
   readonly open: boolean
+  /**
+   * Address the automatic browser handoff opens, when it differs from
+   * {@link WebEntryUrl.url}. A provider whose address carries a credential
+   * names it here, keeping the credential out of printed startup output.
+   */
+  readonly openUrl?: string
 }
 
 declare module '@deepseek-ai/cordis' {

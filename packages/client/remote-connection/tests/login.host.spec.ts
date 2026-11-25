@@ -1,6 +1,6 @@
 /** QR login credentials, owner-only management, and anonymous exchange. */
 import { Context } from '@deepseek-ai/cordis'
-import type { WebResourceRoute, WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
+import type { WebEntryUrl, WebResourceRoute, WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import type { Principal, RemoteInvocation } from '@deepseek-ai/dsh-typert-protocol'
 import * as Token from '@deepseek-ai/dsh-host-authentication-token'
 import { IncomingMessage, type ServerResponse } from 'node:http'
@@ -37,7 +37,12 @@ function caller(ctx: Context, principal: Principal = { kind: 'owner' }): RemoteC
   return ctx.extend({ invocation }).remoteConnection
 }
 
-async function mount(url = 'https://login.example/ui/', protocol: 'http:' | 'https:' = 'https:', withToken = true) {
+async function mount(
+  url = 'https://login.example/ui/',
+  protocol: 'http:' | 'https:' = 'https:',
+  withToken = true,
+  earlierEntry?: WebEntryUrl,
+) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   const routes: (WebRoute | WebResourceRoute)[] = []
@@ -51,6 +56,9 @@ async function mount(url = 'https://login.example/ui/', protocol: 'http:' | 'htt
   } as WebServer)
   ctx.provide('webApp', { getAdvertisedUrl: () => url })
   await ctx.plugin(Connection, { trustedHosts: ['login.example', 'other.example', '127.login.example'] })
+  if (earlierEntry !== undefined) {
+    ctx.on('webserver/entry-url', (_base, entries) => { entries.push(earlierEntry) })
+  }
   if (withToken) await ctx.plugin(Token, { cookieMaxAgeDays: 30 })
   const fiber = ctx.plugin(RemoteConnection, RemoteConnection.Config({ ticketLifetimeMs: 120_000, pollIntervalMs: 1000 }))
   await fiber
@@ -247,6 +255,15 @@ it('returns the process-token login URL without consuming or replacing the QR in
   expect(service.loginUrl()).toBe(link)
   expect(service.status(ticket.id)).toMatchObject({ ticket: 'pending', url: 'https://login.example/ui/' })
   expect(JSON.stringify(service.status(ticket.id))).not.toContain(new URL(link).searchParams.get('token'))
+})
+
+it('keeps the login link when another provider published an entry first', async () => {
+  const { service } = await mount('https://login.example/ui/', 'https:', true, {
+    label: 'dsh remote', url: 'https://login.example/ui/invite', open: false,
+  })
+  const link = service.loginUrl()
+  expect(new URL(link).origin + new URL(link).pathname).toBe('https://login.example/ui/')
+  expect(new URL(link).searchParams.get('token')).toMatch(/^[A-Za-z0-9_-]{43}$/u)
 })
 
 it('bounds declared and streamed credential bodies without consuming a ticket', async () => {

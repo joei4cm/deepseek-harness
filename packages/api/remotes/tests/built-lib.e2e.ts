@@ -152,7 +152,7 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
         const entries = []
         host.emit(host.webServer, 'webserver/entry-url', origin + '/', entries)
         if (entries.length !== 1) throw new Error('Token did not contribute exactly one login URL')
-        const launchUrl = entries[0].url
+        const launchUrl = entries[0].openUrl ?? entries[0].url
         const unauthorized = await fetch(origin + '/api')
         const unauthorizedStatus = unauthorized.status
         await unauthorized.text()

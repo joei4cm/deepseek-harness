@@ -26,6 +26,11 @@ export const WEB_STARTUP_SERVICE = 'webStartup'
 export interface WebStartupValues {
   /** Whether this invocation opens the default browser after startup. */
   openBrowser: boolean
+  /**
+   * Whether this invocation prints the one-time login link, whose address
+   * carries the launch token, beside the advertised address.
+   */
+  printLoginUrl: boolean
   /** `--host`, absent when the invocation did not name one. */
   host?: string
   /** `--port`, absent when the invocation did not name one. */
@@ -45,6 +50,7 @@ export interface WebStartupValues {
 interface WebOptions {
   host?: string
   open: boolean
+  printLoginUrl?: boolean
   port?: string
   publicUrl?: string
   trustedHost?: string[]
@@ -63,6 +69,7 @@ function webCommand(): Command {
     .helpOption('-h, --help', 'show this help')
     .option('--host <host>', 'bind address: one concrete IPv4 or IPv6 literal of a local interface; wildcard addresses are rejected')
     .option('--no-open', 'do not open the Web UI in the default browser')
+    .option('--print-login-url', 'print the one-time login link beside the startup URL; anyone who reads this output can open an owner session')
     .option('--port <port>', 'listen port; pass 0 to let the OS pick a free one')
     .option('--public-url <url>', 'advertise this HTTP(S) root in the printed, opened, runtime-context, and DSH_WEB_URL forms; grants no trust')
     .option('--trusted-host <authority...>', 'extra authority the /api browser-trust fence accepts (host or host:port; repeatable)')
@@ -72,6 +79,7 @@ function webCommand(): Command {
 Examples:
   dsh --profile web                          serve on the composed host and port
   dsh --profile web --no-open                serve without opening a browser
+  dsh --profile web --print-login-url        also print the one-time login link
   dsh --profile web --port 8080              serve on another port
   dsh --profile web --host 10.0.0.7          bind one local interface address
   dsh --profile web --public-url https://app.example/ui/ --trusted-host app.example
@@ -113,6 +121,7 @@ export function apply(ctx: Context): void {
     }
     ctx.provide(WEB_STARTUP_SERVICE, {
       openBrowser: options.open,
+      printLoginUrl: options.printLoginUrl ?? false,
       ...options.host !== undefined && { host: options.host },
       ...options.port !== undefined && { port: Number(options.port) },
       ...options.publicUrl !== undefined && { publicUrl: options.publicUrl },

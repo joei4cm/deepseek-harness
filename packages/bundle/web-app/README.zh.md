@@ -57,11 +57,14 @@ dsh --profile web --no-open --port 8080
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `printUrl` | `true` | 启动就绪后打印贡献的入口 URL |
+| `printLoginUrl` | `false` | 打印一次性登录链接，其地址携带启动 token |
 | `openBrowser` | `true` | 启动后打开首个允许自动打开的入口，SSH 下除外 |
 | `surfaceContext` | `true` | 把 `DSH_WEB_URL` 暴露给 agent 的 shell 命令 |
 | `publicUrl` | 未设置 | 对外公告的 HTTP(S) 应用根；否则公告绑定地址 URL |
 
-WebApp 拥有 `printUrl` 与 `openBrowser`。本组合启用 URL 打印，并把解析后的 `--no-open` 设置传给 runtime。就绪后，同步 `webserver/entry-url` 监听器贡献完整入口。启用打印时，WebApp 按 `label: url` 逐行打印；启用浏览器打开且不在 SSH 下时，仅打开首个 `open: true` 的入口。没有入口则不输出、不打开。
+WebApp 拥有 `printUrl`、`printLoginUrl` 与 `openBrowser`。本组合启用 URL 打印，并把解析后的 `--no-open` 与 `--print-login-url` 设置传给 runtime。就绪后，同步 `webserver/entry-url` 监听器贡献完整入口。启用打印时，WebApp 按 `label: url` 逐行打印；启用浏览器打开且不在 SSH 下时，仅打开首个 `open: true` 的入口。没有入口则不输出、不打开。
+
+入口公布的地址从不携带凭据。启动 token 位于浏览器打开的交接地址上，该地址通过两种方式之一到达操作者：默认浏览器交接把它交给操作系统，不经过本进程的输出；或由打印的一次性登录链接给出。设置了 `printLoginUrl` 时 WebApp 打印该链接；否则当进程输出是交互式终端时打印，因为重定向到文件或服务日志的输出可被本机任意进程读取。既没有交互式终端也没有 `printLoginUrl` 的部署只打印地址，其操作者用已持有会话的浏览器登录，或传入 `--print-login-url` 并接受该链接会进入被捕获的输出。
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-web-app)列出了本运行时插件接受的字段及其 JSDoc。随发行版交付的组合插入 `schedule` 服务行与 `ui-schedule` 任务页面行，时钟读数与四个提醒工具则属于 `standard`、`cordis` 与 `ptc` 三个 preset。这三个 preset 的 `tool-subagent` 与 `tool-subagent-fork` 两行都 deny 这四个工具，因此被委派子 agent 的作用域不会列出它们。组合还插入个性化推荐的六行，从 [`action-cards`](../../interaction/action-cards/README.zh.md) 到 `client-ui-plugin-recommendations`，其 `enabled` 开关位于“设置 → 通用设置”。
 
