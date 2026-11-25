@@ -29,6 +29,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `23-file-reference-prompt-dispose.md` | `fix/file-reference-prompt-dispose` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14314` |
 | `24-goal-queue-locale-copy.md` | `fix/client-goal-queue-locale-copy` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14322` |
 | `25-electron-noasar-env-scrub.md` | `fix/subprocess-electron-noasar-leak` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14317` |
+| `26-session-average-speed-label.md` | `fix/ui-chat-session-average-speed-label` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14297` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
