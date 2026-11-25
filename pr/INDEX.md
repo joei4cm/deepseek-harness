@@ -17,5 +17,8 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `11-workspace-menu-fork-failure-notice.md` | `fix/workspace-menu-fork-failure-notice` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14262` |
 | `12-client-modules-unadopted-client-half-warning.md` | `fix/client-modules-unadopted-client-half-warning` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14267` |
 | `13-llm-pi-ai-discovery-headers.md` | `feat/llm-pi-ai-discovery-headers` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14265` |
+| `14-web-app-clean-startup-url.md` | `fix/web-app-clean-startup-url` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14253` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
+
+The `discussions/` directory holds reply drafts for upstream Discussions, ready for the author to review before posting.
