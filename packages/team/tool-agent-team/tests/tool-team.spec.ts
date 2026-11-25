@@ -641,6 +641,33 @@ describe('dsh-tool-team', () => {
     await child.dispose()
   })
 
+  it('treats an empty owner filter as omitted instead of conflicting with unowned', async () => {
+    const { ctx, lead } = await setup(['hang'])
+    const child = await ctx.subagents.startActivation({
+      provider: 'spawn', name: 'worker', label: 'Worker', parent: lead,
+      prompt: [{ type: 'text', text: 'wait' }], signal: SIGNAL, delivery: 'caller',
+    })
+    await waitRunning(ctx, child.childId)
+    const assigned = await ctx.agentTeams.createTask(lead, { subject: 'Assigned', description: 'Owned work' })
+    const pending = await ctx.agentTeams.createTask(lead, { subject: 'Pending', description: 'Unowned work' })
+    await execute(ctx, lead, 'team_task_update', {
+      task_id: assigned.id, expected_revision: assigned.revision, action: 'reassign', owner: child.name,
+    })
+    const emptyWithUnowned = await execute(ctx, lead, 'team_task_list', { owner: '', unowned: true })
+    expect(emptyWithUnowned.isError, text(emptyWithUnowned)).toBe(false)
+    expect(JSON.parse(text(emptyWithUnowned))).toMatchObject({ tasks: [{ id: pending.id }] })
+    const emptyAlone = await execute(ctx, lead, 'team_task_list', { owner: '' })
+    expect(emptyAlone.isError, text(emptyAlone)).toBe(false)
+    expect((JSON.parse(text(emptyAlone)) as { readonly tasks: readonly unknown[] }).tasks).toHaveLength(2)
+    expect(JSON.parse(text(await execute(ctx, lead, 'team_task_list', { owner: '   ', unowned: true }))))
+      .toMatchObject({ tasks: [{ id: pending.id }] })
+    expect(JSON.parse(text(await execute(ctx, lead, 'team_task_list', { owner: ` ${child.name} ` }))))
+      .toMatchObject({ tasks: [{ id: assigned.id }] })
+    expect(await execute(ctx, lead, 'team_task_list', { owner: child.name, unowned: true }))
+      .toMatchObject({ isError: true, error: { info: { name: 'ToolArgsError', code: 'INVALID_ARGS' } } })
+    await child.dispose()
+  })
+
   it('reads and edits saved owner names without traversing descendant Sessions', async () => {
     const { ctx, lead } = await setup([])
     const created = await ctx.agentTeams.createTask(lead, { subject: 'Review', description: 'Saved ownership' })

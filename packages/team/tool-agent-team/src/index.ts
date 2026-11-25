@@ -165,10 +165,14 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (!Number.isSafeInteger(cursor) || cursor < 0) throw new ToolArgsError(['cursor must be a non-negative safe integer'])
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new ToolArgsError(['limit must be an integer from 1 through 100'])
       const caller = callingAgent(exec.agent, 'team_task_list')
-      if (args.owner !== undefined && args.unowned !== undefined) throw new ToolArgsError(['owner and unowned filters cannot be combined'])
-      const owner = args.owner === undefined
+      // Models fill optional strings with empty text by habit; an empty owner
+      // names nobody, so it behaves like an omitted filter rather than
+      // conflicting with unowned or resolving to a bogus Session id.
+      const ownerName = args.owner === undefined || args.owner.trim() === '' ? undefined : args.owner.trim()
+      if (ownerName !== undefined && args.unowned !== undefined) throw new ToolArgsError(['owner and unowned filters cannot be combined'])
+      const owner = ownerName === undefined
         ? undefined
-        : await ctx.subagents.resolveName(caller, args.owner, exec.signal)
+        : await ctx.subagents.resolveName(caller, ownerName, exec.signal)
       const filtered = ctx.agentTeams.listTasks(caller).filter(task =>
         (args.status === undefined || task.status === args.status)
         && (owner === undefined || task.ownerId === owner)
