@@ -1,25 +1,25 @@
 <!--
 状态：草稿，未发布。
 用途：Discussion #14308 的回复正文，供作者过目后决定是否发布。
-说明：源码定位与 Linux Node 原生 fetch 的对照实验；未复现 Windows/Electron 故障，连接复用因果关系尚未证实。
+说明：因果假设（中止拆毁并发连接）在 Linux/Node 上未能复现，留待 Windows socket 级日志确认；防御性的只读重试已落地于 fix/desktop-welcome-invoke-retry。
 -->
 
 # English reply (for posting to Discussion #14308)
 
-The trace narrows the failure to the startup handshake, and the current master still has the two relevant paths: `connectDesktopWelcome` uses Node's `fetch`; `analyticsEnabled()` and `report()` have one-second timeouts, while the settings read used to open the first window has no retry. `reconcileBackend` reports a failure in that startup path as fatal. The observed `ECONNRESET` is therefore actionable even though the backend process remains alive.
+The trace narrows the failure to the startup handshake, and the two relevant paths still stand on master: `connectDesktopWelcome` uses Node `fetch`, `analyticsEnabled()`/`report()` carry one-second timeouts, and the `settings/describe` the first window needs had no retry — so a transient loopback reset on that call becomes a fatal `reconcileBackend` report.
 
-One point needs a controlled reproduction before calling the analytics timeout the cause: the log shows overlapping requests and their order, but does not identify the socket used by each request or establish what reset the settings connection. In a small loopback experiment on Linux with Node's default `fetch`, a delayed report and a concurrent settings request used different client ports; aborting the report did not prevent settings from completing. That experiment is not a Windows/Electron reproduction, and it does not rule out a version-specific pool or server behavior, but it shows that concurrent calls do not necessarily share a connection.
+**What landed:** `fix/desktop-welcome-invoke-retry` adds a single retry inside `connectDesktopWelcome`, scoped to read-only methods (`settings/describe`, `llm/listConfigurableProviders`, `credentials/describe`, `account/getState`, `productAnalytics/enabled`), only when the transport rejects with a `TypeError` — the `fetch failed` family this crash is one member of. Each attempt mints a fresh `rpcId`; the caller's deadline still binds the second attempt; an aborted request (your report's own timeout) is not a `TypeError` and propagates; mutations (`credentials/set`, sign-in lifecycle) stay single-attempt since an unknown outcome must never fire twice. This restores what the Chromium `net.fetch` path did for free — it retried this class of transport failure automatically.
 
-A useful next capture would correlate each request with its connection on both sides (local/remote port or socket identity), together with backend-side connection close/error events. If both requests use different sockets, investigate why the settings socket resets independently; if they use the same socket, a minimal reproduction with the same Electron/Node version and gateway configuration would make the abort mechanism testable. Please redact cookies and other credentials from any trace.
+**What is deliberately not claimed:** the connection-sharing part of the mechanism. In a loopback experiment on Linux with Node's default fetch, a delayed `report` and a concurrent `settings/describe` used different client ports, and aborting the first did not reset the second. That is not a Windows/Electron reproduction — pool behavior may differ — but it means the abort → shared-socket → ECONNRESET chain in the report should be treated as a hypothesis rather than established. If you can capture socket-correlated traces (local/remote port per request, or the backend's close/error events), the same failure tells us whether `describe` dies on its own socket (a different root cause, likely server-side connection churn) or on a shared one (your mechanism). Either way, the retry converts both variants from a crash into a retry.
 
-A bounded retry of the read-only settings request may improve resilience to a transient reset, but it would not by itself prove or remove the underlying cause. Retrying state-changing RPCs indiscriminately would also risk repeating an operation whose outcome is unknown.
+**One design note worth the reviewer's eyes:** the retry is scoped to the *welcome* client, not moved into a shared fetch wrapper — the same code path also serves the long-lived account WebSocket and every later `invoke`, where retrying a mutating call would be wrong. The whitelist lives beside `invoke` so a new read-only method must opt in deliberately.
 
 # 中文对照（仅供作者阅读，不发布）
 
-日志将故障范围缩小到启动握手；当前 master 仍有两条相关路径：`connectDesktopWelcome` 使用 Node 的 `fetch`；`analyticsEnabled()` 和 `report()` 有一秒超时，打开首个窗口所需的设置读取没有重试。`reconcileBackend` 会把该启动路径中的失败上报为致命错误。因此即使后端进程仍然存活，观察到的 `ECONNRESET` 也值得处理。
+日志把故障范围收在启动握手内，两条相关路径在 master 上依然成立：`connectDesktopWelcome` 用 Node `fetch`；`analyticsEnabled()`/`report()` 带一秒超时；首个窗口需要的 `settings/describe` 此前没有重试——所以环回上的一次瞬时连接重置会在 `reconcileBackend` 里变成致命上报。
 
-在把 analytics 超时认定为根因之前，还需要受控复现：日志展示了请求重叠及发生顺序，但没有标识各请求所用的 socket，也没有证明是谁重置了 settings 连接。我在 Linux 上用 Node 默认 `fetch` 做的简短环回实验中，延迟的 report 与并发 settings 请求使用了不同的客户端端口；中止 report 后 settings 仍成功。这不是 Windows/Electron 环境的复现，不能排除特定版本的连接池或服务端行为，但表明并发调用不一定共享连接。
+**已落地：** `fix/desktop-welcome-invoke-retry` 在 `connectDesktopWelcome` 内部加了一次重试，只覆盖只读方法（`settings/describe`、`llm/listConfigurableProviders`、`credentials/describe`、`account/getState`、`productAnalytics/enabled`），且只在传输层以 `TypeError` 拒绝时触发——即本次崩溃所属的 `fetch failed` 一族。每次尝试换新 `rpcId`；调用方 deadline 仍约束第二次尝试；被中止的请求（report 自己的超时）不是 `TypeError`，直接传播；写操作（`credentials/set`、登录生命周期）保持单次——结果未知的调用绝不允许重发。这恢复了 Chromium `net.fetch` 曾经免费提供的同类传输失败自动重试。
 
-下一次抓取可以在两端关联请求与连接（本地/远端端口或 socket 标识），同时记录后端连接关闭及错误事件。如果两个请求使用不同 socket，可调查 settings 连接为何独立重置；如果使用同一 socket，可用相同 Electron/Node 版本和 gateway 配置制作最小复现，验证中止机制。分享日志前请隐藏 cookie 和其他凭据。
+**刻意不声称的：** 连接共享那半段机制。Linux 上用 Node 默认 fetch 做环回实验，延迟的 `report` 与并发 `settings/describe` 使用了不同客户端端口，中止前者并未重置后者。这不是 Windows/Electron 的复现——连接池行为可能不同——但说明报告里「中止 → 共享 socket → ECONNRESET」的链条应视为假设而非定论。如果你能拿到 socket 级日志（每个请求的本地/远端端口，或后端的 close/error 事件），同一次失败就能区分：`describe` 死在*自己的* socket 上（另一种根因，多半是服务端连接抖动）还是共享 socket 上（你的机制）。无论哪种，重试都会把两种变体从崩溃变回一次重试。
 
-对只读 settings 请求做有界重试可能提高应对瞬时重置的能力，但本身不能证明或消除根因。对有状态变更的 RPC 一律重试，还可能重复执行结果未知的操作。
+**一处值得评审者看的设计点：** 重试限定在 *welcome* 客户端内部，而不是抽成共享 fetch 包装——同一条 `invoke` 路径还服务长生命周期的 account WebSocket 和之后的每个调用，在那里对写操作重试是错的。白名单放在 `invoke` 旁边，新的只读方法需要显式 opt in。

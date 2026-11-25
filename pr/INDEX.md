@@ -30,6 +30,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `24-goal-queue-locale-copy.md` | `fix/client-goal-queue-locale-copy` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14322` |
 | `25-electron-noasar-env-scrub.md` | `fix/subprocess-electron-noasar-leak` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14317` |
 | `26-session-average-speed-label.md` | `fix/ui-chat-session-average-speed-label` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14297` |
+| `27-desktop-welcome-invoke-retry.md` | `fix/desktop-welcome-invoke-retry` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14308` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
