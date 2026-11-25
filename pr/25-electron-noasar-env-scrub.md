@@ -13,7 +13,7 @@
 
 **Module responsibilities and dependencies**: None（无新增/删除包、无运行时依赖边变化、无职责迁移）。
 
-**Existing test behavior**：`runnerStdio` 的 Windows IPC 分支 fd 2 期望从 `'ignore'` 更新为 `'pipe'`；`windows-job.spec.ts` 的 FakeChild 补 runner stderr 流（fd 2 管道是新行为）。`spawn-runner.spec.ts`/`windows-job.spec.ts` 三处 stdio 断言同步更新。
+**Existing test behavior**：`runnerStdio` 的 Windows IPC 分支 fd 2 期望从 `'ignore'` 更新为 `'pipe'`；`windows-job.spec.ts` 的 FakeChild 补 runner stderr 流（fd 2 管道是新行为）。`spawn-runner.spec.ts`/`windows-job.spec.ts` 三处 stdio 断言同步更新。另外 `resolveWindowsExecutable` 的测试调用此前依赖 `process.env` 提供 cwd 搜索策略，ambient `NoDefaultCurrentDirectoryInExePath` 会静默改变探测顺序——全部改为注入显式环境（seam 已支持的第 5 参），仅两处专门测该策略的调用保留 `NODEFAULT` env。
 
 ## Testing
 
@@ -30,7 +30,7 @@
 Windows 端真机验证由 CI 的 `check:windows-wine`/Windows 作业承担；本机为 Linux，runner bootstrap 的 asar 路径是 Windows Desktop 打包形态专属，无法在本机复现端到端故障。
 
 **Test entries**:
-- `env -u NoDefaultCurrentDirectoryInExePath pnpm exec vitest run packages/subprocess/subprocess/tests/service.spec.ts packages/subprocess/subprocess-local/tests/windows-job.spec.ts packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts` — 3 文件 64 用例全绿（本机）。`env -u` 仅为本机 ambient `NoDefaultCurrentDirectoryInExePath=1` 干扰既有用例所需，与本次改动无关。
+- `env -u NoDefaultCurrentDirectoryInExePath pnpm exec vitest run packages/subprocess/subprocess/tests/service.spec.ts packages/subprocess/subprocess-local/tests/windows-job.spec.ts packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts` — 3 文件 64 用例全绿（本机）。`env -u` 仅为本机 ambient `NoDefaultCurrentDirectoryInExePath=1` 干扰既有用例所需——该干扰随后在本分支第二个 commit 中已消除，重跑 `pnpm exec vitest run packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts` 在污染环境下 40 用例全绿（本机）。
 - `env -u NoDefaultCurrentDirectoryInExePath pnpm exec vitest run packages/subprocess/subprocess-local/tests/native-windows.spec.ts packages/subprocess/subprocess/tests/egress.spec.ts packages/subprocess/subprocess-local/tests/linux-scope.spec.ts packages/subprocess/subprocess-local/tests/local.spec.ts` — 125 通过、5 跳过（native-windows 为 Windows 专属跳过）。
 - 推送时 pre-push typecheck：5 gates 全过（本机，~110s）。
 - `pnpm run verify-translation-pairing` — 2 对 README 配对一致（本机）。
