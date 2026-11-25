@@ -76,7 +76,8 @@ export interface UiWorkspace {
    * Resolve the Session for a new conversation in a Workspace: navigation names the first reusable
    * blank member — listed in the Workspace, not archived, and listing no preset or the requested one —
    * and the Host reuses it under the requested preset or its default, creating another Session when it
-   * reuses none. Concurrent calls for the same Workspace and preset share one attempt.
+   * reuses none. A recently connected blank can also be named before catalog membership arrives.
+   * Concurrent calls for the same Workspace and preset share one attempt.
    * @param workspaceId - target Workspace.
    * @param options - choices for the created or reused Session.
    * @returns a Session already addressable through the Session Controller.
@@ -171,6 +172,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     readonly agentPreset: string | undefined
     readonly attempt: Promise<SessionId>
   }>()
+  private readonly recentBlanks = new Map<WorkspaceId, { sessionId: SessionId; path: string; agentPreset: string | undefined }>()
   private readonly lifetime = new AbortController()
   private readonly selection = createSnapshotStore<MainSelection>(
     {}, { persist: { name: 'dsh.sessions.current' } },
@@ -178,6 +180,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   private mainReference: SessionReference | undefined
   private readonly recentViews: RecentSessionViews
   private restorationNavigation: AbortSignal | undefined
+  private explicitWorkspaceNavigation = false
 
   /**
    * @param ctx - Client root Context.
@@ -233,7 +236,12 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const inflight = this.connecting.get(workspaceId)
     if (inflight !== undefined && inflight.agentPreset === reuse.agentPreset) return inflight.attempt
 
-    const attempt = this.createInWorkspace(workspace, reuse).finally(() => {
+    const attempt = this.createInWorkspace(workspace, reuse).then((sessionId) => {
+      if (this.connecting.get(workspaceId)?.attempt === attempt) {
+        this.recentBlanks.set(workspaceId, { sessionId, path: workspace.path, agentPreset: reuse.agentPreset })
+      }
+      return sessionId
+    }).finally(() => {
       if (this.connecting.get(workspaceId)?.attempt === attempt) this.connecting.delete(workspaceId)
     })
     this.connecting.set(workspaceId, { agentPreset: reuse.agentPreset, attempt })
@@ -251,9 +259,19 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         && workspace.sessionIds.includes(id) && !archived.includes(id)
         && (options.agentPreset === undefined || typeof listed !== 'string' || listed === options.agentPreset)
     })
+    const recent = this.recentBlanks.get(workspace.workspaceId)
+    const recentSummary = recent === undefined ? undefined : sessions.byId[recent.sessionId]
+    const reusableRecent = recent !== undefined && recent.path === workspace.path
+      && !archived.includes(recent.sessionId)
+      && (!workspace.sessionIds.includes(recent.sessionId) || recentSummary?.cwd === undefined)
+      && (recentSummary === undefined || (recentSummary.blank && (recentSummary.cwd === undefined || recentSummary.cwd === workspace.path)))
+      && (options.agentPreset === undefined || recent.agentPreset === undefined || recent.agentPreset === options.agentPreset)
+      && (options.agentPreset === undefined || typeof recentSummary?.projectionValues?.agentPreset !== 'string'
+        || recentSummary.projectionValues.agentPreset === options.agentPreset)
+    const candidate = blank ?? (reusableRecent ? recent.sessionId : undefined)
     return this.createNamed({
       workspaceId: workspace.workspaceId,
-      ...(blank === undefined ? {} : { sessionId: blank }),
+      ...(candidate === undefined ? {} : { sessionId: candidate }),
       ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
     })
   }
@@ -316,6 +334,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     beforeOpen: ((sessionId: SessionId) => void) | undefined,
     reuse: Pick<StartSessionOptions, 'agentPreset'>,
   ): Promise<void> {
+    this.explicitWorkspaceNavigation = true
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
     let sessionId: SessionId
     try {
@@ -443,6 +462,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       if (this.lifetime.signal.aborted) return
       if (this.clearArchivedCurrent()) return
       if (initial !== 'waiting' || this.restorationNavigation?.aborted === true) return
+      if (this.explicitWorkspaceNavigation) {
+        initial = 'done'
+        return
+      }
       const workspace = this.workspaces.list.getSnapshot()
       const sessions = this.sessions.list.getSnapshot()
       if (workspace.phase !== 'ready' || sessions.phase !== 'ready') return
@@ -455,7 +478,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         () => { initial = 'done' },
         (reason: unknown) => {
           if (this.lifetime.signal.aborted) return
-          initial = 'waiting'
+          initial = 'done'
           console.warn('initial Session restoration failed:', reason)
         },
       )
