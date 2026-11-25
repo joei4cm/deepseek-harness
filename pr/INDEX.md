@@ -22,6 +22,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `16-session-follow-observation-retention.md` | `fix/session-follow-observation-retention` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14263` |
 | `17-bash-output-head-tail-preview.md` | `fix/bash-output-head-tail-preview` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14276` |
 | `18-shell-signal-exit-status-posix-code.md` | `fix/shell-signal-exit-status-posix-code` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14277` |
+| `19-subprocess-fallback-wait-child-exit.md` | `fix/subprocess-fallback-wait-child-exit` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14259` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
