@@ -9,7 +9,7 @@
  * writes CRLF on Windows, so exact text assertions normalize line endings.
  */
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -498,6 +498,54 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
     expect(result.stdout.truncated).toBe(false)
     expect(result.stderr.truncated).toBe(true)
     expect(result.stderr.text.length).toBeLessThanOrEqual(100)
+  })
+
+  it('keeps the stdout head alongside the tail and spills the complete stream', { timeout: 30_000 }, async () => {
+    const { bash } = await setup({ maxOutputBytes: 100, headBytes: 20 })
+    const full = Array.from({ length: 50 }, (_, i) => `${String(i + 1).padStart(4, '0')}\n`).join('')
+    const result = await run(bash, bash.resolve({
+      // Raw Console writes keep the byte counts exact on every platform.
+      command: '1..50 | ForEach-Object { [Console]::Out.Write("{0:d4}`n" -f $_) }',
+    }))
+    const tail = Array.from({ length: 16 }, (_, i) => String(i + 35).padStart(4, '0')).join('\n') + '\n'
+    expect(result.stdout.truncated).toBe(true)
+    expect(lf(result.stdout.text)).toBe(`0001\n0002\n0003\n0004\n\n[… omitted 150 bytes …]\n${tail}`)
+    expect(readFileSync(result.stdout.spillPath!, 'utf8')).toBe(full)
+  })
+
+  it('falls back to the tail-only preview when the spill never materializes', { timeout: 30_000 }, async () => {
+    // A discarded spill leaves no full-output file, so the head bytes are
+    // unrecoverable and the preview degrades to the tail alone.
+    const { bash } = await setup({ maxOutputBytes: 100, maxSpillBytes: 8, headBytes: 20 })
+    const result = await run(bash, bash.resolve({
+      command: '1..50 | ForEach-Object { [Console]::Out.Write("{0:d4}`n" -f $_) }',
+    }))
+    expect(result.stdout.truncated).toBe(true)
+    expect(result.stdout.spillPath).toBeUndefined()
+    expect(result.stdout.text).not.toContain('[… omitted')
+    expect(result.stdout.text.length).toBeLessThanOrEqual(100)
+  })
+
+  it('falls back to the tail-only preview when the spill file disappears before the result', { timeout: 30_000 }, async () => {
+    const { bash } = await setup({ maxOutputBytes: 100, headBytes: 20 })
+    const before = readdirSync(spillDir).length
+    const execution = await bash.execute(bash.resolve({
+      command: '1..50 | ForEach-Object { [Console]::Out.Write("{0:d4}`n" -f $_); Start-Sleep -Milliseconds 10 }',
+    }))
+    // Delete the spill file as soon as it exists: the collector keeps writing
+    // through its open descriptor, but the result's head read finds nothing
+    // and the preview degrades to the tail alone.
+    const deadline = Date.now() + 5_000
+    while (readdirSync(spillDir).length === before && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    const created = readdirSync(spillDir).slice(before)
+    expect(created).toHaveLength(1)
+    rmSync(join(spillDir, created[0]!))
+    const result = await execution.result()
+    expect(result.stdout.truncated).toBe(true)
+    expect(result.stdout.spillPath).toBeDefined()
+    expect(lf(result.stdout.text)).not.toContain('[… omitted')
   })
 
   it('per-call timeout takes precedence under the cap and kills on expiry', async () => {

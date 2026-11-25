@@ -466,7 +466,7 @@ export interface Config {
 
 - `inject`: `subprocess`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/shell/bash-local/src/index.ts:41`](../packages/shell/bash-local/src/index.ts)
+- `source`: [`packages/shell/bash-local/src/index.ts:45`](../packages/shell/bash-local/src/index.ts)
 
 ```ts config-catalog
 /** Validated plugin configuration with live command budgets. */
@@ -479,6 +479,14 @@ export interface Config {
   maxTimeoutMs: Volatile<number>
   /** Per-stream in-memory output cap; overflow spills to a temp file. */
   maxOutputBytes: Volatile<number>
+  /**
+   * Head bytes kept alongside the retained tail on stdout, so a truncated
+   * preview shows the stream's first bytes (headers, first failures) as well;
+   * the omitted middle is elided by an exact byte marker. The effective head
+   * takes at most half of each call's stdout budget, so the tail keeps the
+   * stream's last bytes; zero restores tail-only previews.
+   */
+  headBytes: Volatile<number>
   /** Per-stream spill-file cap; larger streams retain only their in-memory tail. */
   maxSpillBytes: Volatile<number>
   /** Grace period for kill escalation and inherited pipes; at most `MAX_TIMER_DELAY_MS`. */
@@ -3244,7 +3252,7 @@ export type LaunchConfig = {
 
 - `inject`: `subprocess`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/shell/pwsh-local/src/index.ts:58`](../packages/shell/pwsh-local/src/index.ts)
+- `source`: [`packages/shell/pwsh-local/src/index.ts:62`](../packages/shell/pwsh-local/src/index.ts)
 
 ```ts config-catalog
 /** Validated plugin configuration with live command budgets. */
@@ -3257,6 +3265,14 @@ export interface Config {
   maxTimeoutMs: Volatile<number>
   /** Per-stream in-memory output cap; overflow spills to a temp file. */
   maxOutputBytes: Volatile<number>
+  /**
+   * Head bytes kept alongside the retained tail on stdout, so a truncated
+   * preview shows the stream's first bytes (headers, first failures) as well;
+   * the omitted middle is elided by an exact byte marker. The effective head
+   * takes at most half of each call's stdout budget, so the tail keeps the
+   * stream's last bytes; zero restores tail-only previews.
+   */
+  headBytes: Volatile<number>
   /** Per-stream spill-file cap; larger streams retain only their in-memory tail. */
   maxSpillBytes: Volatile<number>
   /** Grace period for kill escalation and inherited pipes; at most `MAX_TIMER_DELAY_MS`. */

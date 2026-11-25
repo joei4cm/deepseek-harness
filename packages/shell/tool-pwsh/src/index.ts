@@ -154,7 +154,7 @@ function pwshDescription(windowsSandbox: boolean): string {
     + 'Each call runs in a fresh pwsh process; pass `workdir` instead of using `cd`. Paths use native Windows form (`C:\\...`); read environment '
     + 'variables with `$env:NAME`. '
     + 'Managed `$env:DSH_*` variables expose current harness environment facts. '
-    + 'Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. '
+    + 'Long output keeps its beginning and end; the full output is saved to a file whose path is reported when available. '
     + 'On Windows a force-killed command settles as `[exit code: 1]` without a signal marker — treat it as an interruption, not a command failure. '
     + 'Provide `description` before `command` in the arguments. '
     + 'Before any delete or move, verify that the resolved absolute target path is the intended one; never run it against a computed path you have not checked. '

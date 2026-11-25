@@ -12,6 +12,7 @@
 import type { Volatile } from '@deepseek-ai/cordis'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { closeSync, openSync, readSync } from 'node:fs'
 import { ShellExecutor } from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellExecution, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
 import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
@@ -37,6 +38,9 @@ const DEFAULT_GRACE_MS = 3_000
 /** Default per-stream spill cap (the `maxSpillBytes` config). */
 const DEFAULT_MAX_SPILL_BYTES = 64 * 1024 * 1024
 
+/** Default head bytes kept alongside the retained tail (the `headBytes` config). */
+const DEFAULT_HEAD_BYTES = 2_048
+
 /** Validated plugin configuration with live command budgets. */
 export interface Config {
   /** Default working directory for commands (default: process.cwd()). */
@@ -47,6 +51,14 @@ export interface Config {
   maxTimeoutMs: Volatile<number>
   /** Per-stream in-memory output cap; overflow spills to a temp file. */
   maxOutputBytes: Volatile<number>
+  /**
+   * Head bytes kept alongside the retained tail on stdout, so a truncated
+   * preview shows the stream's first bytes (headers, first failures) as well;
+   * the omitted middle is elided by an exact byte marker. The effective head
+   * takes at most half of each call's stdout budget, so the tail keeps the
+   * stream's last bytes; zero restores tail-only previews.
+   */
+  headBytes: Volatile<number>
   /** Per-stream spill-file cap; larger streams retain only their in-memory tail. */
   maxSpillBytes: Volatile<number>
   /** Grace period for kill escalation and inherited pipes; at most `MAX_TIMER_DELAY_MS`. */
@@ -54,12 +66,42 @@ export interface Config {
 }
 
 /** Project a settled collect-mode reader into the final CollectedOutput shape. */
-function finalOutput(reader: SubprocessOutputReader): CollectedOutput {
+function finalOutput(reader: SubprocessOutputReader, maxBytes: number, headBytes: number): CollectedOutput {
   const read = reader.readFrom(0)
+  const truncated = read.lossy
+  const plain: CollectedOutput = { text: read.text, truncated, ...read.spillPath !== undefined ? { spillPath: read.spillPath } : {} }
+  // A truncated stdout preview keeps the stream's head alongside the tail:
+  // headers and first failures live at the top of real command output. The
+  // head bytes come from the complete spill file, the tail stays in memory,
+  // and the two windows stay disjoint because the tail is re-trimmed to the
+  // budget minus the head. A missing spill degrades to the tail-only shape.
+  if (!truncated || headBytes === 0 || read.spillPath === undefined) return plain
+  // The head window takes at most half the preview budget: the tail must keep
+  // the stream's last bytes, where errors and final results cluster.
+  const head = Math.min(headBytes, Math.floor(maxBytes / 2))
+  const keep = maxBytes - head
+  const total = read.nextOffset
+  let headText: string
+  try {
+    const buffer = Buffer.alloc(head)
+    const fd = openSync(read.spillPath, 'r')
+    try {
+      headText = buffer.toString('utf8', 0, readSync(fd, buffer, 0, head, 0))
+    } finally {
+      closeSync(fd)
+    }
+  } catch (_unreadableSpill) {
+    // The spill file is the only copy of the head bytes; without it the
+    // preview falls back to the tail alone rather than failing the result.
+    return plain
+  }
+  const tail = Buffer.from(read.text, 'utf8')
+  const tailText = tail.subarray(tail.length - keep).toString('utf8')
+  const omitted = total - head - Math.min(keep, tail.length)
   return {
-    text: read.text,
-    truncated: read.lossy,
-    ...read.spillPath !== undefined ? { spillPath: read.spillPath } : {},
+    text: `${headText}\n[… omitted ${omitted} bytes …]\n${tailText}`,
+    truncated,
+    spillPath: read.spillPath,
   }
 }
 
@@ -80,6 +122,10 @@ export function assertServiceableBashConfig(config: Config): void {
   assertPositiveFinite('timeoutMs', config.timeoutMs.get())
   assertPositiveFinite('maxTimeoutMs', config.maxTimeoutMs.get())
   assertPositiveFinite('maxOutputBytes', config.maxOutputBytes.get())
+  const headBytes = config.headBytes.get()
+  if (!Number.isSafeInteger(headBytes) || headBytes < 0) {
+    throw new Error(`bash-local: headBytes must be a non-negative integer, got ${headBytes}`)
+  }
   assertPositiveFinite('maxSpillBytes', config.maxSpillBytes.get())
   assertPositiveFinite('graceMs', config.graceMs.get())
   if (config.graceMs.get() > MAX_TIMER_DELAY_MS) {
@@ -102,6 +148,7 @@ export class LocalBashExecutor extends ShellExecutor {
     timeoutMs: z.number().default(120_000).volatile(),
     maxTimeoutMs: z.number().default(600_000).volatile(),
     maxOutputBytes: z.number().default(64_000).volatile(),
+    headBytes: z.number().default(DEFAULT_HEAD_BYTES).volatile(),
     maxSpillBytes: z.number().default(DEFAULT_MAX_SPILL_BYTES).volatile(),
     graceMs: z.number().default(DEFAULT_GRACE_MS).volatile(),
   })
@@ -377,8 +424,8 @@ export class LocalBashExecutor extends ShellExecutor {
             signal: proc.signal,
             ...classify(),
             timeoutMs: spec.timeoutMs,
-            stdout: finalOutput(collected.stdout),
-            stderr: finalOutput(collected.stderr),
+            stdout: finalOutput(collected.stdout, spec.stdoutMaxBytes, this.config.headBytes.get()),
+            stderr: finalOutput(collected.stderr, this.config.maxOutputBytes.get(), 0),
           }
         })
         return resultPromise

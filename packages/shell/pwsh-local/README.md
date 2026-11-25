@@ -49,6 +49,7 @@ Load the executor with the budgets you want; every field has a default, so the s
 | `timeoutMs` | `120,000` | Default foreground timeout, in milliseconds |
 | `maxTimeoutMs` | `600,000` | Cap for per-call timeout overrides |
 | `maxOutputBytes` | `64,000` | Per-stream in-memory output cap; overflow spills to a temp file |
+| `headBytes` | `2,048` | Stdout head bytes kept alongside the retained tail, capped at half the call's stdout budget; the elided middle is marked with its exact byte count (0 restores tail-only) |
 | `maxSpillBytes` | `67,108,864` | Per-stream full-output spill cap |
 | `graceMs` | `3,000` | Grace period for kill escalation and post-exit pipe draining |
 | `pwshPath` | resolved | Explicit pwsh executable; else well-known locations, then PATH |
@@ -129,7 +130,7 @@ Read these pages when the executor contract is not enough. They move from the se
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through `dsh-tool-pwsh`, which renders this executor's bounded stdout/stderr tails, background-process deltas (through the generic job runtime), spill-file paths, and infrastructure failures.
+Indirectly, through `dsh-tool-pwsh`, which renders this executor's bounded stdout head-and-tail and stderr tail, background-process deltas (through the generic job runtime), spill-file paths, and infrastructure failures.
 
 #### KV Cache effect
 
