@@ -19,6 +19,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `13-llm-pi-ai-discovery-headers.md` | `feat/llm-pi-ai-discovery-headers` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14265` |
 | `14-web-app-clean-startup-url.md` | `fix/web-app-clean-startup-url` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14253` |
 | `15-team-task-list-empty-owner-filter.md` | `fix/team-task-list-empty-owner-filter` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14280` |
+| `16-session-follow-observation-retention.md` | `fix/session-follow-observation-retention` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14263` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
