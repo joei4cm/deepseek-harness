@@ -202,6 +202,12 @@ const SOURCE_URL_TRAILER = /(?:\r?\n)?\/\/# sourceURL=([^\r\n]+)(?:\r?\n)?$/
 /** Published package-local client chunk names accepted by the on-demand route. */
 const CLIENT_CHUNK = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
 
+/**
+ * Registration banner the shared client build preset prepends to every entry
+ * bundle, with the id the bundle registers under captured from the head.
+ */
+const BUNDLE_REGISTRATION_BANNER = /^window\.__ModuleLoader__\.load\(\{ id: ("(?:[^"\\]|\\.)*")/u
+
 /** Resolve `exports["./client"]` to a relative path, accepting the string and one-level conditional forms. */
 function clientExportOf(pkgName: string, exportsField: unknown): string | undefined {
   if (typeof exportsField !== 'object' || exportsField === null) return undefined
@@ -985,7 +991,35 @@ export class ClientModuleRegistry extends Service {
       // it is not a client row.
       return undefined
     }
-    return this.nearestPackage(moduleUrl, expectedPackageName)
+    const located = this.nearestPackage(moduleUrl, expectedPackageName)
+    if (located === undefined) this.warnSkippedClientHalf(loaderName, moduleUrl)
+    return located
+  }
+
+  /**
+   * Report a client half the exact-name pairing drops. A name-specifier row
+   * that resolves to a package whose manifest name differs — an npm-alias
+   * install (`<name>@npm:@scope/<name>`) — never pairs, so the row is skipped
+   * with no other observable failure. A resolved package without a web client
+   * half loses nothing and stays silent.
+   * @param loaderName - module specifier of the loader row.
+   * @param moduleUrl - the URL the Loader resolved the row's module to.
+   */
+  private warnSkippedClientHalf(loaderName: string, moduleUrl: string): void {
+    const nearest = this.nearestPackage(moduleUrl)
+    if (nearest === undefined) return
+    const pkg = JSON.parse(readFileSync(nearest.path, 'utf8')) as Record<string, unknown>
+    const dsh = pkg.dsh
+    const decl = parseDshClient(
+      nearest.packageName,
+      dsh !== null && typeof dsh === 'object' ? (dsh as Record<string, unknown>).client : undefined,
+    )
+    if (decl === undefined || decl.platform !== 'web') return
+    this.ctx.logger.warn(
+      `client-modules: loader entry ${JSON.stringify(loaderName)} resolves to package ${JSON.stringify(nearest.packageName)}`
+      + ` at ${nearest.path}, which declares a web client half; client rows pair by exact package name, so the mismatched`
+      + ' entry never adopts it — install under the manifest name or rename the package to match the entry',
+    )
   }
 
   private nearestPackage(
@@ -1128,15 +1162,39 @@ export class ClientModuleRegistry extends Service {
     const unchanged = current?.sourceKey === source.sourceKey
       && isDeepStrictEqual(current.meta, source.meta) && isDeepStrictEqual(current.entry, entry)
     if (unchanged) return false
+    const bundle = this.readClientBundle(packageName, clientPath, () => readFileSync(clientPath))
+    this.warnRejectedBundleRegistration(packageName, bundle)
     this.table.set(packageName, {
       entry,
       loaderName: source.loaderName,
       sourceKey: source.sourceKey,
       meta: source.meta,
-      bundle: this.readClientBundle(packageName, clientPath, () => readFileSync(clientPath)),
+      bundle,
       baseline,
     })
     return true
+  }
+
+  /**
+   * Report a bundle whose registration banner names another id. The shared
+   * client build preset stamps the manifest name into the banner, so a bundle
+   * built before its package was renamed is rejected by the browser against
+   * the renamed graph row while the Host serves it with no failure of its own.
+   * @param packageName - package whose bundle is being published.
+   * @param bundle - the bundle bytes read for publication.
+   */
+  private warnRejectedBundleRegistration(packageName: string, bundle: Buffer): void {
+    const banner = BUNDLE_REGISTRATION_BANNER.exec(bundle.subarray(0, 1024).toString('utf8'))
+    if (banner === null) return
+    // The id group always participates in a match; the default keeps the indexed read typed.
+    const [, quotedId = ''] = banner
+    const registered = JSON.parse(quotedId) as string
+    if (registered === packageName) return
+    this.ctx.logger.warn(
+      `client-modules: package ${JSON.stringify(packageName)} bundle banner registers ${JSON.stringify(registered)}`
+      + ' instead of the graph row id, so the browser rejects it — rebuild the client bundle; the shared build preset'
+      + ' stamps the manifest name into the banner',
+    )
   }
 
   private flush(onError: (err: Error) => void): void {

@@ -33,6 +33,8 @@ kind: "package-reference"
 
 浏览器插件包在其 `package.json` 中以 `platform: 'web'` 声明 `dsh.client`，导出 `./client` bundle，并在 `dsh.client.external` 下列出任何基座之外的模块请求。宿主半侧把每份声明变成 `/plugins` 下提供的 bundle，并让动态提供方先于其消费方加载。
 
+包 manifest 的 name 就是浏览器模块 id，row 只有在其 Loader 条目解析到声明完全相同名称的 manifest 时才采纳该声明：npm 别名安装（`<name>@npm:@scope/<name>`）会让宿主半侧继续工作而客户端半侧永远不会被采纳，组合在解析到的包带有无法配对的 web 客户端半侧时发出警告。构建出的 bundle 用同一个 id 配对——共享构建预设把 manifest name 写进其注册 banner，浏览器只在该 id 下采纳 factory——因此在包改名前构建的 bundle 会被改名后的 row 拒绝，组合在提供的 bundle banner 写着别的 id 时发出警告。
+
 <a id="package-assets"></a>
 ### 包资源
 

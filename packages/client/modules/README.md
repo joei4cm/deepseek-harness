@@ -33,6 +33,8 @@ Use it when you compose or build a browser client plugin: the package turns a pa
 
 A browser plugin package declares `dsh.client` in its `package.json` with `platform: 'web'`, exports a `./client` bundle, and lists any non-baseline module requests under `dsh.client.external`. The host half turns each declaration into a served bundle under `/plugins`, ordered so dynamic providers load before their consumers.
 
+The package manifest name is the browser module id, and a row adopts the declaration only when its Loader entry resolves to a manifest declaring exactly that name: an npm-alias install (`<name>@npm:@scope/<name>`) keeps the host half working while the client half is never adopted, and composition warns when a resolved package's web client half cannot pair. The built bundle pairs through the same id — the shared build preset stamps the manifest name into its registration banner, and the browser adopts the factory only under that id — so a bundle built before a package rename is rejected against the renamed row, and composition warns when a served bundle's banner names another id.
+
 <a id="package-assets"></a>
 ### Package assets
 

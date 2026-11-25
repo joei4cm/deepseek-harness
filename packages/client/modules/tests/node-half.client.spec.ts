@@ -165,9 +165,12 @@ function constructWithRoute(
     entryBaseUrl?: string
     internal?: NonNullable<Context['loader']['internal']>
     onEntries?: () => void
+    /** Observed after the Context exists and before the service constructs, for pre-activation spies. */
+    onContext?: (context: Context) => void
   } = {},
 ): { context: Context; service: ClientModuleRegistry; route: Promise<WebResourceRoute> } {
   const ctx = new Context()
+  options.onContext?.(ctx)
   const owned: typeof contexts[number] = { ctx }
   contexts.push(owned)
   ctx.baseUrl = options.contextBaseUrl ?? pathToFileURL(root!).href + '/'
@@ -637,6 +640,90 @@ describe('client bundle activation', () => {
     const { service } = constructWithRoute([packageName], { internal })
 
     expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+  })
+
+  it('warns when an alias-installed package declares the client half the exact-name pairing drops', () => {
+    const packageName = '@fixture/alias-dropped'
+    const clientPath = writePackage(packageName)
+    const hostPath = join(dirname(clientPath), 'index.js')
+    mkdirSync(dirname(hostPath), { recursive: true })
+    writeFileSync(hostPath, 'export default {}\n')
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    const internal = {
+      version: 'v2' as const,
+      resolveSync: () => ({ format: 'module' as const, url: pathToFileURL(hostPath).href }),
+    }
+    const { context, service } = constructWithRoute(['alias-installed'], {
+      internal: internal as unknown as NonNullable<Context['loader']['internal']>,
+      onContext: (context) => { vi.spyOn(context.logger, 'warn').mockImplementation(() => undefined) },
+    })
+
+    expect(service.graph().entries).toEqual([])
+    expect(context.logger.warn).toHaveBeenCalledWith(expect.stringContaining(
+      `loader entry "alias-installed" resolves to package "${packageName}"`,
+    ))
+  })
+
+  it('stays silent when an alias-installed package declares no web client half', () => {
+    const packageName = '@fixture/alias-host-only'
+    const clientPath = writePackage(packageName, {})
+    const moduleUrl = pathToFileURL(join(dirname(dirname(clientPath)), 'lib', 'index.js')).href
+    const internal = {
+      version: 'v2' as const,
+      resolveSync: () => ({ format: 'module' as const, url: moduleUrl }),
+    }
+    const { context, service } = constructWithRoute(['alias-installed'], {
+      internal: internal as unknown as NonNullable<Context['loader']['internal']>,
+      onContext: (context) => { vi.spyOn(context.logger, 'warn').mockImplementation(() => undefined) },
+    })
+
+    expect(service.graph().entries).toEqual([])
+    expect(context.logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('stays silent when a name row resolves to a module no manifest owns', () => {
+    const internal = {
+      version: 'v2' as const,
+      resolveSync: () => ({ format: 'module' as const, url: 'memory:virtual/module.js' }),
+    }
+    const { context, service } = constructWithRoute(['@fixture/virtual'], {
+      contextBaseUrl: pathToFileURL(join(tmpdir(), 'dsh-client-modules-virtual')).href + '/',
+      internal: internal as unknown as NonNullable<Context['loader']['internal']>,
+      onContext: (context) => { vi.spyOn(context.logger, 'warn').mockImplementation(() => undefined) },
+    })
+
+    expect(service.graph().entries).toEqual([])
+    expect(context.logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('warns when a served bundle registers under another id', () => {
+    const packageName = '@fixture/stale-banner'
+    const clientPath = writePackage(packageName)
+    mkdirSync(dirname(clientPath), { recursive: true })
+    const banner = 'window.__ModuleLoader__.load({ id: "@fixture/renamed-away", factory: (require) => {'
+    writeFileSync(clientPath, `${banner}\nmodule.exports = {}\n`)
+    const { context, service } = constructWithRoute([packageName], {
+      onContext: (context) => { vi.spyOn(context.logger, 'warn').mockImplementation(() => undefined) },
+    })
+
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+    expect(context.logger.warn).toHaveBeenCalledWith(expect.stringContaining(
+      'bundle banner registers "@fixture/renamed-away"',
+    ))
+  })
+
+  it('keeps a bundle whose banner registers the graph row id silent', () => {
+    const packageName = '@fixture/matched-banner'
+    const clientPath = writePackage(packageName)
+    mkdirSync(dirname(clientPath), { recursive: true })
+    const banner = `window.__ModuleLoader__.load({ id: ${JSON.stringify(packageName)}, factory: (require) => {`
+    writeFileSync(clientPath, `${banner}\nmodule.exports = {}\n`)
+    const { context, service } = constructWithRoute([packageName], {
+      onContext: (context) => { vi.spyOn(context.logger, 'warn').mockImplementation(() => undefined) },
+    })
+
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+    expect(context.logger.warn).not.toHaveBeenCalled()
   })
 
   it('allows sibling dsh roles', () => {
