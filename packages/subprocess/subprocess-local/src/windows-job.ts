@@ -52,6 +52,9 @@ type RunnerProcess = Omit<ReturnType<typeof spawn>, 'send' | 'stdio'> & {
   stdio: Array<Readable | Writable | null>
 }
 
+/** Bounded tail of runner stderr kept for infrastructure-failure diagnostics. */
+const MAX_RUNNER_DIAGNOSTIC_CHARS = 4096
+
 function isWindowsStartCancellationError(error: SerializedRunnerError): boolean {
   return error.name === 'Error'
     && error.message === 'subprocess target start was cancelled'
@@ -164,6 +167,8 @@ export function launchWindowsJob(
   let runnerSpawned = false
   let runnerExit: { exitCode: number | null; signal: NodeJS.Signals | null } | undefined
   let ipcDisconnected = false
+  let runnerStderrText = ''
+  let runnerStderrEnded = true
   const failInfrastructure = (error: unknown): void => {
     direct.reject(error)
     rangeExit.reject(error)
@@ -179,13 +184,34 @@ export function launchWindowsJob(
       // The private IPC result may arrive after the process-exit notification.
       if (!ipcDisconnected) return
     }
+    // Buffered stderr bytes can still be in flight at the exit notification.
+    if (!runnerStderrEnded) return
     const status = signal !== null
       ? `signal ${signal}`
       : exitCode === null ? 'without an exit status' : `exit code ${String(exitCode)}`
+    const diagnostic = runnerStderrText === '' ? '' : `: ${runnerStderrText.trimEnd()}`
     failInfrastructure(new SubprocessError(
-      `subprocess-local: Windows Job runner exited with ${status} before proving its managed range empty`,
+      `subprocess-local: Windows Job runner exited with ${status} before proving its managed range empty${diagnostic}`,
       'SUBPROCESS_RUNNER_FAILED',
     ))
+  }
+
+  // The runner's own stderr is piped, not ignored: a bootstrap failure such as
+  // an unresolved archived entry dies before IPC opens, and the last bytes it
+  // printed are the only diagnosis available.
+  const runnerStderr = child.stdio[2] as Readable | null
+  runnerStderrEnded = runnerStderr === null
+  if (runnerStderr !== null) {
+    runnerStderr.setEncoding('utf8')
+    runnerStderr.on('data', (chunk: string) => {
+      runnerStderrText = (runnerStderrText + chunk).slice(-MAX_RUNNER_DIAGNOSTIC_CHARS)
+    })
+    const runnerStderrSettled = (): void => {
+      runnerStderrEnded = true
+      settleRange()
+    }
+    runnerStderr.once('close', runnerStderrSettled)
+    runnerStderr.once('error', runnerStderrSettled)
   }
 
   const owner = new WindowsJobOwner(

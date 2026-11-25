@@ -77,7 +77,7 @@ const output = handle.collected.stdout?.readFrom(0)
 
 ### 每个子进程起步时的环境
 
-子进程永远不会隐式继承 harness 的环境秘密：形似凭据的名称与环境中的 `DSH_*` 事实都会被清除，调用方显式的 `env` 在该清除之后合并。有意转发的凭据或当前的 `DSH_*` 部署事实仍会到达子进程；显式的 `undefined` 墓碑值则移除一个普通的环境项。
+子进程永远不会隐式继承 harness 的环境秘密：形似凭据的名称与环境中的 `DSH_*` 事实都会被清除，调用方显式的 `env` 在该清除之后合并。Electron 的 `ELECTRON_NO_ASAR` 开关同样会被清除——harness 子进程不是 Electron 应用入口，该变量会关闭打包运行时内的 asar 解析；`ELECTRON_RUN_AS_NODE` 保留，让经由 Electron Node 模式启动的子进程保持 Node 行为。有意转发的凭据或当前的 `DSH_*` 部署事实仍会到达子进程；显式的 `undefined` 墓碑值则移除一个普通的环境项。
 
 ### 可能出错的地方
 

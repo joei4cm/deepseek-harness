@@ -100,4 +100,20 @@ describe('SubprocessRuntime seam', () => {
       delete process.env.SCRUB_PROBE_PLAIN
     }
   })
+
+  it('scrubbedParentEnv drops Electron asar-disable (case-insensitively) but keeps the Node-mode flag', () => {
+    process.env.ELECTRON_NO_ASAR = '1'
+    process.env.electron_no_asar = '1'
+    process.env.ELECTRON_RUN_AS_NODE = '1'
+    try {
+      const env = scrubbedParentEnv()
+      expect(env.ELECTRON_NO_ASAR).toBeUndefined()
+      expect(env.electron_no_asar).toBeUndefined()
+      expect(env.ELECTRON_RUN_AS_NODE).toBe('1')
+    } finally {
+      delete process.env.ELECTRON_NO_ASAR
+      delete process.env.electron_no_asar
+      delete process.env.ELECTRON_RUN_AS_NODE
+    }
+  })
 })

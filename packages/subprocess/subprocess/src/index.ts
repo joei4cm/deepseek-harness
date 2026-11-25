@@ -54,8 +54,19 @@ export type {
 export const SENSITIVE_ENV_PATTERN = /KEY|PASSWORD|SECRET|TOKEN/i
 
 /**
- * The ambient parent environment minus credential-shaped names and minus all
- * `DSH_*` names — the canonical base every harness child starts from. `PATH`,
+ * Electron's asar-disable switch leaks into a packaged Host process from its
+ * desktop runtime; a harness child is not an Electron app entry, and under
+ * Electron's Node mode the variable removes the asar support the harness's own
+ * archived runner entries need. `ELECTRON_RUN_AS_NODE` is not matched: it is
+ * the mode selection that makes the packaged Electron binary behave as plain
+ * Node, so it must keep reaching children spawned through it.
+ */
+const ELECTRON_ASAR_DISABLE_PATTERN = /^ELECTRON_NO_ASAR$/i
+
+/**
+ * The ambient parent environment minus credential-shaped names, all
+ * `DSH_*` names, and Electron's asar-disable switch — the canonical base every
+ * harness child starts from. `PATH`,
  * `HOME`, locale, and proxy variables survive, so child CLIs run normally;
  * harness identity never leaks implicitly (a deliberately forwarded
  * credential or current `DSH_*` fact goes through the spec's explicit `env`,
@@ -73,7 +84,10 @@ export const SENSITIVE_ENV_PATTERN = /KEY|PASSWORD|SECRET|TOKEN/i
 export function scrubbedParentEnv(): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && !SENSITIVE_ENV_PATTERN.test(key) && !key.toUpperCase().startsWith(DSH_ENV_PREFIX)) env[key] = value
+    if (value !== undefined
+      && !SENSITIVE_ENV_PATTERN.test(key)
+      && !key.toUpperCase().startsWith(DSH_ENV_PREFIX)
+      && !ELECTRON_ASAR_DISABLE_PATTERN.test(key)) env[key] = value
   }
   // A child Node ignores the inherited proxy variables unless the flag this adds is set, so an MCP
   // stdio server or subagent CLI would connect directly while its parent proxies. The same overlay

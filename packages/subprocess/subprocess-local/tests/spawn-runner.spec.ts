@@ -282,9 +282,9 @@ describe('runner launch inputs', () => {
     expect(runnerStdio(spec, false)).toEqual(['pipe', 'pipe', 'inherit'])
     const withControl = { ...spec, stdio: { ...spec.stdio, control: 'pipe' as const } }
     expect(runnerStdio(withControl, false)).toEqual(['pipe', 'pipe', 'inherit', 'ignore', 'ignore', 'ignore', 'ignore', 'overlapped'])
-    expect(runnerStdio(withControl, true)).toEqual(['ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2, 'overlapped'])
+    expect(runnerStdio(withControl, true)).toEqual(['ignore', 'ignore', 'pipe', 'ipc', 'pipe', 'pipe', 2, 'overlapped'])
     expect(runnerStdio(spec, true)).toEqual([
-      'ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2,
+      'ignore', 'ignore', 'pipe', 'ipc', 'pipe', 'pipe', 2,
     ])
     expect(runnerStdio({
       ...spec,
@@ -293,7 +293,7 @@ describe('runner launch inputs', () => {
     expect(runnerStdio({
       ...spec,
       stdio: { stdin: 'ignore', stdout: 'inherit', stderr: 'pipe' },
-    }, true, 17)).toEqual(['ignore', 'ignore', 'ignore', 'ipc', 17, 1, 'pipe'])
+    }, true, 17)).toEqual(['ignore', 'ignore', 'pipe', 'ipc', 17, 1, 'pipe'])
   })
 
   it('removes ambient Node and tsx controls from the bootstrap environment only', () => {
@@ -319,6 +319,23 @@ describe('runner launch inputs', () => {
         TSX_DISABLE_CACHE: '1',
         TSX_TSCONFIG_PATH: '/ambient/tsconfig.json',
       })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('drops Electron asar-disable from the bootstrap environment while keeping the Node-mode flag', () => {
+    vi.stubEnv('ELECTRON_NO_ASAR', '1')
+    vi.stubEnv('electron_no_asar', '1')
+    vi.stubEnv('ELECTRON_RUN_AS_NODE', '1')
+    try {
+      const env = runnerEnvironment('/tmp/request')
+      expect(env.ELECTRON_NO_ASAR).toBeUndefined()
+      expect(env.electron_no_asar).toBeUndefined()
+      expect(env.ELECTRON_RUN_AS_NODE).toBe('1')
+      // A deliberately forwarded entry still reaches the target's explicit env layer.
+      expect(targetEnvironment({ ...spec, env: { ...spec.env, ELECTRON_NO_ASAR: '1' } }))
+        .toMatchObject({ ELECTRON_NO_ASAR: '1' })
     } finally {
       vi.unstubAllEnvs()
     }

@@ -14,10 +14,11 @@ class FakeChild extends EventEmitter {
   stdin = new PassThrough()
   stdout = new PassThrough()
   stderr = new PassThrough()
+  runnerStderr = new PassThrough()
   targetStdin = new PassThrough()
   targetStdout = new PassThrough()
   targetStderr = new PassThrough()
-  stdio = [null, null, null, null, this.targetStdin, this.targetStdout, this.targetStderr]
+  stdio = [null, null, this.runnerStderr, null, this.targetStdin, this.targetStdout, this.targetStderr]
   sent: unknown[] = []
   killed: NodeJS.Signals[] = []
   sendError: Error | undefined
@@ -26,6 +27,12 @@ class FakeChild extends EventEmitter {
   throwOnSendCall: number | undefined
   sendThrown: unknown = new Error('send threw')
   private sendCalls = 0
+
+  constructor() {
+    super()
+    // Process exit ends the runner's own stderr pipe before 'close' fires.
+    this.once('exit', () => { this.runnerStderr.end() })
+  }
 
   exit(exitCode: number | null, signal: NodeJS.Signals | null): void {
     this.emit('exit', exitCode, signal)
@@ -171,7 +178,7 @@ describe('Windows parent runner contract', () => {
     expect(result.control).toBe(control)
     expect(child.sent).toEqual([{ type: 'start', cwd: 'C:\\target', env: { TARGET: 'yes' }, control: 'pipe' }])
     expect(spawn).toHaveBeenCalledWith('C:\\node.exe', expect.any(Array), expect.objectContaining({
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2, 'overlapped'],
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc', 'pipe', 'pipe', 2, 'overlapped'],
     }))
     control.destroy()
   })
@@ -183,7 +190,7 @@ describe('Windows parent runner contract', () => {
     ], expect.objectContaining({
       cwd: process.cwd(),
       windowsHide: true,
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2],
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc', 'pipe', 'pipe', 2],
     }))
     expect(child.sent).toEqual([{ type: 'start', cwd: 'C:\\target', env: { TARGET: 'yes' } }])
     expect(result.stdin).toBe(child.targetStdin)
@@ -199,7 +206,7 @@ describe('Windows parent runner contract', () => {
     } as const
     const { result, spawn } = launch(child, ignored)
     expect(spawn).toHaveBeenCalledWith('C:\\node.exe', expect.any(Array), expect.objectContaining({
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc', expect.any(Number), 'pipe', 2],
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc', expect.any(Number), 'pipe', 2],
     }))
     const options = spawn.mock.calls[0]?.[2] as { stdio: unknown[] }
     const carrier = options.stdio[4]
@@ -351,6 +358,20 @@ describe('Windows parent runner contract', () => {
     statusless.child.exit( null, null)
     await expect(statusless.result.direct).rejects.toThrow('without an exit status')
     await expect(statusless.result.direct).rejects.toMatchObject({ name: 'SubprocessError', code: 'SUBPROCESS_RUNNER_FAILED' })
+  })
+
+  it('appends the runner stderr tail to an infrastructure failure after the stream closes', async () => {
+    const crashed = launch()
+    crashed.child.runnerStderr.write("Error: Cannot find module 'C:\\app.asar\\dsh\\runner.js'\n")
+    crashed.child.exit(1, null)
+    await expect(crashed.result.direct).rejects.toThrow('exit code 1')
+    await expect(crashed.result.direct).rejects.toThrow('Cannot find module')
+    await expect(crashed.result.owner.waitForExit()).rejects.toThrow('Cannot find module')
+
+    const quiet = launch()
+    quiet.child.exit(1, null)
+    await expect(quiet.result.direct).rejects.toThrow('exit code 1 before proving its managed range empty')
+    await expect(quiet.result.direct).rejects.toMatchObject({ name: 'SubprocessError', code: 'SUBPROCESS_RUNNER_FAILED' })
   })
 
   it('fails closed on malformed/duplicate result, runner spawn error, and start-send error', async () => {

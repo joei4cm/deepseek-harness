@@ -77,7 +77,7 @@ A terminal request can opt into `shellActivity`. `inspectActivity()` combines su
 
 ### Environment every child starts from
 
-Children never inherit the harness's ambient secrets: credential-shaped names and ambient `DSH_*` facts are scrubbed, and the caller's explicit `env` merges after that scrub. A deliberately forwarded credential or a current `DSH_*` deployment fact still reaches the child; an explicit `undefined` tombstone removes an ordinary ambient entry.
+Children never inherit the harness's ambient secrets: credential-shaped names and ambient `DSH_*` facts are scrubbed, and the caller's explicit `env` merges after that scrub. Electron's `ELECTRON_NO_ASAR` switch is scrubbed too — a harness child is not an Electron app entry, and the variable would disable asar resolution inside a packaged runtime; `ELECTRON_RUN_AS_NODE` survives so children launched through Electron's Node mode stay Node. A deliberately forwarded credential or a current `DSH_*` deployment fact still reaches the child; an explicit `undefined` tombstone removes an ordinary ambient entry.
 
 ### What can go wrong
 
