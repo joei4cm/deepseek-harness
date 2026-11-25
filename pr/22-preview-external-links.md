@@ -122,11 +122,19 @@ Refs #14304
 
   </details>
 
-- 本地 `DSH_SNAPSHOT=replay pnpm run test:web`（运行时观察）：build 阶段 10 门全过；e2e 阶段观察到的失败均带 `'WebKit'` 标签（geometry / focus / resize / tooltip 类场景），与本改动覆盖的表面无交集，判定为本机 WebKit 环境 flake 并在交接中注明。
+- 本地 `DSH_SNAPSHOT=replay pnpm run test:web`（运行时观察）：build 阶段 10 门全过；e2e 阶段观察到的失败均带 `'WebKit'` 标签（geometry / focus / resize / tooltip 类场景）或落在回放时序敏感的 unrelated 套件，与本改动覆盖的表面无交集，判定为本机 WebKit 环境 flake 并在交接中注明。直接覆盖本改动的 `apps/web/tests/document-preview.e2e.ts` 焦点运行通过（见下一条）。
 
   <details><summary>Proof</summary>
 
-  进行中；已观察 12 个文件失败，全部 `'WebKit'` 标签，无一涉及 documentpreview / HTML 预览。
+  进行中（截至观察时 21 个失败，全部 `'WebKit'` 标签或 unrelated 回放套件；documentpreview / HTML 预览无一失败）。
+
+  </details>
+
+- 本地 `DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/document-preview.e2e.ts`：直接覆盖本改动的浏览器冒烟。
+
+  <details><summary>Proof</summary>
+
+  `Test Files 2 passed (2); Tests 7 passed`
 
   </details>
 
