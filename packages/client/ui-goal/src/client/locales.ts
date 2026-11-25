@@ -41,7 +41,7 @@ export const ja = {
   'phase.active.disarmed': '非アクティブな目標',
   'phase.paused': '一時停止中の目標',
   'phase.blocked': 'ブロックされた目標',
-  'objective.aria': '目標の目的',
+  'objective.aria': '目標の説明',
   'commandInput.aria': 'コマンド入力',
   'action.save': '目標を保存',
   'action.cancel': '編集をキャンセル',
@@ -53,18 +53,18 @@ export const ja = {
 
 /** Spanish dictionary, checked against the English keys. */
 export const es = {
-  'phase.active': 'Meta en curso',
-  'phase.active.disarmed': 'Meta inactiva',
+  'phase.active': 'Objetivo en curso',
+  'phase.active.disarmed': 'Objetivo inactivo',
   'phase.paused': 'Objetivo en pausa',
-  'phase.blocked': 'Meta bloqueada',
-  'objective.aria': 'Objetivo de meta',
+  'phase.blocked': 'Objetivo bloqueado',
+  'objective.aria': 'Descripción del objetivo',
   'commandInput.aria': 'Entrada de comando',
-  'action.save': 'Guardar gol',
+  'action.save': 'Guardar objetivo',
   'action.cancel': 'Cancelar edición',
   'action.pause': 'Pausar objetivo',
   'action.resume': 'Reanudar objetivo',
   'action.edit': 'Editar objetivo',
-  'action.clear': 'Objetivo claro',
+  'action.clear': 'Limpiar objetivo',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -73,14 +73,14 @@ export const fr = {
   'phase.active.disarmed': 'Objectif inactif',
   'phase.paused': 'Objectif suspendu',
   'phase.blocked': 'Objectif bloqué',
-  'objective.aria': 'Objectif du but',
+  'objective.aria': "Contenu de l'objectif",
   'commandInput.aria': 'Entrée de commande',
   'action.save': "Sauvegarder l'objectif",
   'action.cancel': 'Annuler la modification',
   'action.pause': "Suspendre l'objectif",
   'action.resume': "Reprendre l'objectif",
   'action.edit': "Modifier l'objectif",
-  'action.clear': 'Objectif clair',
+  'action.clear': "Effacer l'objectif",
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -89,14 +89,14 @@ export const de = {
   'phase.active.disarmed': 'Inaktives Ziel',
   'phase.paused': 'Pausiertes Ziel',
   'phase.blocked': 'Blockiertes Ziel',
-  'objective.aria': 'Zielziel',
+  'objective.aria': 'Zielbeschreibung',
   'commandInput.aria': 'Befehlseingabe',
   'action.save': 'Ziel speichern',
   'action.cancel': 'Bearbeitung abbrechen',
   'action.pause': 'Ziel pausieren',
   'action.resume': 'Ziel fortsetzen',
   'action.edit': 'Ziel bearbeiten',
-  'action.clear': 'Klares Ziel',
+  'action.clear': 'Ziel löschen',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -105,14 +105,14 @@ export const ru = {
   'phase.active.disarmed': 'Неактивная цель',
   'phase.paused': 'Приостановленная цель',
   'phase.blocked': 'Заблокированная цель',
-  'objective.aria': 'Цель Цель',
+  'objective.aria': 'Описание цели',
   'commandInput.aria': 'Ввод команды',
   'action.save': 'Сохранить цель',
   'action.cancel': 'Отменить редактирование',
   'action.pause': 'Приостановить цель',
   'action.resume': 'Возобновить цель',
   'action.edit': 'Изменить цель',
-  'action.clear': 'Четкая цель',
+  'action.clear': 'Удалить цель',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -121,12 +121,12 @@ export const pt = {
   'phase.active.disarmed': 'Meta inativa',
   'phase.paused': 'Meta pausada',
   'phase.blocked': 'Meta bloqueada',
-  'objective.aria': 'Objetivo da meta',
+  'objective.aria': 'Conteúdo da meta',
   'commandInput.aria': 'Entrada de comando',
   'action.save': 'Salvar meta',
   'action.cancel': 'Cancelar edição',
   'action.pause': 'Pausar meta',
   'action.resume': 'Retomar meta',
   'action.edit': 'Editar meta',
-  'action.clear': 'Objetivo claro',
+  'action.clear': 'Limpar meta',
 } satisfies Record<keyof typeof en, string>
