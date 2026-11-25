@@ -1,11 +1,26 @@
 import { Context } from '@deepseek-ai/cordis'
 import { createMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { type SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import { setFlagsFromString } from 'node:v8'
+import { runInNewContext } from 'node:vm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HistoryController } from '../src/history/controller.ts'
 import { WebController } from '../src/web/controller.ts'
 import { installSessionReadTestServices } from './test-remote.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
+
+/**
+ * Run several full collections. `--expose-gc` stays enabled for the rest of this forked Vitest worker
+ * process; only new vm contexts can obtain `gc`, so other specs in the worker may observe it there.
+ */
+async function collectGarbage(): Promise<void> {
+  setFlagsFromString('--expose-gc')
+  const gc = runInNewContext('gc') as () => void
+  for (let pass = 0; pass < 5; pass += 1) {
+    gc()
+    await new Promise((resolve) => { setImmediate(resolve) })
+  }
+}
 
 const roots: Context[] = []
 const aborters: AbortController[] = []
@@ -171,5 +186,30 @@ describe('HistoryController passive reads', () => {
     f.abort.abort()
     expect(await pending).toMatchObject({ done: true })
     expect(promote).not.toHaveBeenCalled()
+  })
+
+  it('drops the opening Observation once the snapshot is delivered', async () => {
+    const f = await fixture()
+    const acquire = f.ctx.sessionQuery.observeSession.bind(f.ctx.sessionQuery)
+    let released!: WeakRef<object>
+    const spy = vi.spyOn(f.ctx.sessionQuery, 'observeSession').mockImplementation(async (...args) => {
+      const source = await acquire(...args)
+      const opening = {
+        ...source,
+        [Symbol.dispose]() { source[Symbol.dispose]() },
+      }
+      released = new WeakRef(opening)
+      return opening
+    })
+    const stream = f.web.follow({ address: f.address }, f.abort.signal)[Symbol.asyncIterator]()
+    expect(await stream.next()).toMatchObject({ value: { type: 'snapshot' } })
+    // The spy's own call journal keeps the settled promise (and with it the
+    // observation); clear it so the generator's resource stack is the only
+    // holder the assertion can attribute.
+    spy.mockClear()
+    // The snapshot is delivered and the lease ended; nothing outside the
+    // generator's own resource stack could still hold the disposed observation.
+    await collectGarbage()
+    expect(released.deref()).toBeUndefined()
   })
 })

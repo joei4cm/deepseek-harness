@@ -3,9 +3,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { HistoryController } from '../history/controller.ts'
 import { addressId, rejectNotFound } from '../history.ts'
 import { EventListener, ListenerBuffer } from '../history/listener.ts'
+import type { SessionAssistantStreamsListener } from '../history/assistant-stream.ts'
 import { history, projections, resolveHistoryRequest, validateObservationAddress } from '../history/controller.ts'
 import type { SessionFollowFrame, SessionFollowRequest } from '../types.ts'
 
@@ -38,6 +40,37 @@ export class WebController {
     using assistantListener = request.assistantStream === true
       ? streams.bind(sessionId, signal, queue)
       : undefined
+    // The observation lease closes in `opening`, one scope above the first
+    // yield: a `using` record would otherwise pin the disposed observation —
+    // and the full event history behind it — in this generator's resource
+    // stack for the life of the follow stream.
+    const opening = await this.opening(request, sessionId, spec, listener, assistantListener, signal)
+    yield opening
+    yield* queue.items()
+  }
+
+  /**
+   * Build the opening snapshot inside one observation lease that closes with
+   * this call. Increments come from the queue, so the opening ends this lease
+   * in every branch; activation continues on its own retained lease. Promotion
+   * starts before the opening is delivered, so a consumer that stops after the
+   * snapshot still gets the activation it asked for.
+   * @param request - external follow request, for address errors and activation.
+   * @param sessionId - resolved Session identity the observation reads.
+   * @param spec - validated history window from {@link resolveHistoryRequest}.
+   * @param listener - stream listener whose cursor cuts buffered history at the snapshot.
+   * @param assistantListener - bound assistant stream listener, when requested.
+   * @param signal - cancellation for the observation read and promotion.
+   * @returns the snapshot frame the generator yields first.
+   */
+  private async opening(
+    request: SessionFollowRequest,
+    sessionId: SessionId,
+    spec: ReturnType<typeof resolveHistoryRequest>,
+    listener: EventListener,
+    assistantListener: ReturnType<SessionAssistantStreamsListener['bind']> | undefined,
+    signal: AbortSignal,
+  ): Promise<SessionFollowFrame> {
     using observation = await this.historyController.usingObservation({ sessionId, projection: true }, signal)
       .catch((error: unknown) => {
         if (remoteErrorOf(error)?.code === 'session/not-found') rejectNotFound(request.address)
@@ -56,9 +89,6 @@ export class WebController {
       opening = { ...opening, assistantStream }
       assistantListener.setOrdinalCut(ordinal)
     }
-    // Increments come from the queue, so the opening ends this lease in every branch;
-    // activation continues on its own retained lease. Promotion starts before the opening is
-    // delivered, so a consumer that stops after the snapshot still gets the activation it asked for.
     if (request.activate === true && !signal.aborted
       && observation.header.origin !== 'subagent' && observation.source === 'prepared') {
       const promotion = observation.retain()
@@ -72,7 +102,6 @@ export class WebController {
     } else {
       observation[Symbol.dispose]()
     }
-    yield opening
-    yield* queue.items()
+    return opening
   }
 }
