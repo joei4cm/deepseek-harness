@@ -275,7 +275,7 @@ describe('composer stats pills', () => {
     // No tool call in this session: the row is absent, not zeroed.
     expect(details.textContent).not.toContain('Tool time')
     expect(details.textContent).toContain('Avg time to first token (TTFT)0.8s')
-    expect(details.textContent).toContain('Tokens per second (TPS)20 tok/s')
+    expect(details.textContent).toContain('Session-avg tokens per second (TPS)20 tok/s')
     // Token accounting lives on the usage pill's own dialog, not here.
     expect(dialog.textContent).not.toContain('Token usage')
   })
@@ -506,7 +506,7 @@ describe('composer stats pills', () => {
     expect(dialog.textContent).toContain('LLM time1m40s')
     expect(dialog.textContent).toContain('Tool time1m2s')
     expect(dialog.textContent).toContain('Avg time to first token (TTFT)0.8s')
-    expect(dialog.textContent).toContain('Tokens per second (TPS)20 tok/s')
+    expect(dialog.textContent).toContain('Session-avg tokens per second (TPS)20 tok/s')
   })
 
   it('omits the cache-hit segment when nothing was billed on the input side', () => {
