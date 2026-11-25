@@ -59,7 +59,7 @@ pnpm exec vitest run packages/subprocess
   Test Files  25 passed | 1 failed | 1 skipped
   Tests  466 passed | 1 failed | 14 skipped
   ※ spawn-runner.spec.ts「resolves Windows executables with target-cwd and PATH
-    search semantics」在未修改的 master（4b399c39a6）上同样失败，为预存问题，与
+    search semantics」在未修改的 master（dsh-v0.2.3-alpha.2）上同样失败，为预存问题，与
     本 PR 无关。
 
 pnpm exec tsc -b tsconfig.host.json
