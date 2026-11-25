@@ -10,7 +10,6 @@
 
 import { type ChildProcess, type SpawnOptions, spawn, spawnSync } from 'node:child_process'
 import type { Readable } from 'node:stream'
-import { setTimeout as sleepMs } from 'node:timers/promises'
 import { scrubbedParentEnv, SubprocessError } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
@@ -77,16 +76,6 @@ export interface SpawnInternals {
 export interface LocalSubprocessHandle extends SubprocessHandle {
   /** Force-terminate the current tree synchronously without starting timers or waits. */
   terminateForHostExit(): void
-}
-
-/**
- * Liveness-poll cadence for tree-exit waits. The timer stays ref'd: an
- * awaited teardown must keep the event loop alive until the tree really
- * exits, or the parent can exit while claiming quiescence and orphan the
- * survivors it promised to reap.
- */
-function sleepTick(): Promise<void> {
-  return sleepMs(15)
 }
 
 /**
@@ -212,11 +201,12 @@ function fallbackOwner(
 ): BoundProcessOwner {
   let stopped = false
   let directSettled = false
+  let directWatcher: (() => void) | undefined
   let observation: Promise<void> | undefined
   let liveMember: number | undefined
   void direct.then(
-    () => { directSettled = true },
-    () => { directSettled = true },
+    () => { directSettled = true; directWatcher?.() },
+    () => { directSettled = true; directWatcher?.() },
   )
 
   const alive = (): boolean => {
@@ -253,7 +243,25 @@ function fallbackOwner(
          protects direct internal re-entry after signal() observed absence. */
       if (stopped) return
       observation ??= (async () => {
-        while (alive()) await sleepTick()
+        // Once the direct child settles, liveness is one kill(-pid, 0) plus one
+        // /proc stat read; before it settles, the direct child's 'exit' event
+        // supplies the liveness fact for free. A synchronous probe that fires
+        // while the direct child still runs can only confirm liveness — never
+        // absence — so it is skipped for the cheap check, which lets a no-
+        // survivor wait cost nothing instead of a 15 ms cadence of kill(0)s.
+        for (;;) {
+          const cheapCheck = !(platform !== 'win32' && !directSettled)
+          if (cheapCheck && !alive()) break
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, 15)
+            if (directSettled) return
+            const wake = (): void => { clearTimeout(timer); resolve() }
+            directWatcher = wake
+            void direct.finally(() => {
+              if (directWatcher === wake) directWatcher = undefined
+            })
+          })
+        }
         stopped = true
       })()
       await observation

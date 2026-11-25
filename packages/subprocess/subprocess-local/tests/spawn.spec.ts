@@ -904,7 +904,31 @@ describe('windows tree semantics (injected platform)', () => {
 })
 
 describe('waitForExit', () => {
-  it.skipIf(process.platform === 'win32')('waits for the whole detached tree, not just the shell', async () => {
+  it.skipIf(process.platform === 'win32')('wakes on the direct child exit event instead of polling while the leader lives', async () => {
+    const running = spawnSubprocess(spec('sleep 60'))
+    const spawnSpy = vi.spyOn(process, 'kill')
+    try {
+      const waiting = running.waitForExit()
+      await new Promise(resolve => setTimeout(resolve, 100))
+      // While the direct child still runs, no synchronous group probe may fire:
+      // a kill(-pid, 0) can only confirm liveness there, never prove absence.
+      const groupProbes = () => spawnSpy.mock.calls.filter(([pid]) => typeof pid === 'number' && pid < 0)
+      expect(groupProbes()).toHaveLength(0)
+      running.terminate()
+      await running.done
+      const probesAfterSettle = groupProbes().length
+      await expect(waiting).resolves.toBe(true)
+      // One wake plus at most a few synchronous probes settle the wait — never a
+      // 15 ms cadence across the whole process lifetime.
+      expect(groupProbes().length - probesAfterSettle).toBeLessThanOrEqual(3)
+    } finally {
+      spawnSpy.mockRestore()
+      running.terminate()
+      await running.done.catch(() => {})
+    }
+  })
+
+  it('waits for the whole detached tree, not just the shell', async () => {
     const pidFile = join(spillDir, `tree-wait-${Date.now()}.pid`)
     const running = spawnSubprocess(spec(`sleep 60 & echo $! > ${pidFile}; wait`))
     const grandchild = await waitForPidFile(pidFile)
@@ -1253,6 +1277,17 @@ describe('coverage seams', () => {
       await expect(running.waitForExit(AbortSignal.timeout(20))).resolves.toBe(false)
     } finally {
       killSpy.mockRestore()
+      if (rootPid === undefined) {
+        // With the event-driven wait, EPERM on the first cheap check needs no
+        // earlier probe while the direct child runs; terminate() drives the
+        // synchronous probe that names the group before teardown.
+        const probe = vi.spyOn(process, 'kill').mockImplementation((target, signal) => {
+          if (typeof target === 'number' && target < 0) rootPid ??= -target
+          return realKill(target, signal)
+        })
+        running.terminate()
+        probe.mockRestore()
+      }
       if (rootPid === undefined) throw new Error('fallback owner did not probe its private process group')
       realKill(-rootPid, 'SIGKILL')
       await running.done
