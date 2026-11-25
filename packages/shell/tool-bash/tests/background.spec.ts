@@ -275,7 +275,7 @@ describe('foreground commands as jobs', () => {
     expect(result.isError).toBe(false)
     if (result.isError) throw new Error('expected a foreground result')
     expect(result.value).toMatchObject({ kind: 'foreground', signal: 'SIGTERM', stopped: 'cancelled by the user' })
-    expect(text(result)).toBe('(no output)\n[stopped: cancelled by the user]\n[killed by signal: SIGTERM]')
+    expect(text(result)).toBe('(no output)\n[stopped: cancelled by the user]\n[killed by signal: SIGTERM (exit code: 143)]')
     expect(ctx.jobs.list()).toEqual([])
   })
 

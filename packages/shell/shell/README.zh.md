@@ -64,7 +64,7 @@ seam 本身不是执行器：每个组合只挂载一个提供方，工具即可
 
 ### 共享的退出状态约定
 
-工具结果以机器可读的退出标记结尾——`[exit code: N]` 或 `[killed by signal: X]`——模型因此总能知道命令如何结束。seam 拥有该标记格式，以及把渲染结果拆回输出正文与结构化退出状态的 `parseExitStatus` 辅助函数，使 `bash` 与 `pwsh` 两个工具永远不会在此漂移。
+工具结果以机器可读的退出标记结尾——`[exit code: N]` 或 `[killed by signal: X]`——模型因此总能知道命令如何结束。平台能编号的信号会附加约定的 POSIX `128 + signum` 状态，因此 `SIGTERM` 标记渲染为 `[killed by signal: SIGTERM (exit code: 143)]`。seam 拥有该标记格式，以及把渲染结果拆回输出正文与结构化退出状态的 `parseExitStatus` 辅助函数（为 pill 剥掉括号里的状态），使 `bash` 与 `pwsh` 两个工具永远不会在此漂移。
 
 -----
 

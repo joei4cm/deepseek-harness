@@ -340,7 +340,7 @@ describe('foreground commands as jobs (pwsh)', () => {
     if (result.isError) throw new Error('expected a foreground result')
     expect(scripted.killed()).toBe(true)
     expect(result.value).toMatchObject({ kind: 'foreground', signal: 'SIGTERM', stopped: 'cancelled by the user' })
-    expect((result.content[0] as { text: string }).text).toBe('(no output)\n[stopped: cancelled by the user]\n[killed by signal: SIGTERM]')
+    expect((result.content[0] as { text: string }).text).toBe('(no output)\n[stopped: cancelled by the user]\n[killed by signal: SIGTERM (exit code: 143)]')
     expect(ctx.jobs.list()).toEqual([])
   })
 

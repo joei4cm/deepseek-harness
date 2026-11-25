@@ -134,7 +134,7 @@ describe.each([
   describe.each(['bash', 'pwsh'])('%s', (name) => {
     it.each([
       { outcome: 'nonzero exit', marker: '\n[exit code: 7]' },
-      { outcome: 'terminating signal', marker: '\n[killed by signal: SIGTERM]' },
+      { outcome: 'terminating signal', marker: '\n[killed by signal: SIGTERM (exit code: 143)]' },
       { outcome: 'markerless output', marker: '' },
     ])('keeps a spilled $outcome result generic', async ({ marker }) => {
       const original = 'HEAD 雪\n'.repeat(200) + marker

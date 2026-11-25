@@ -11,6 +11,7 @@
  */
 
 import type { ShellSandboxInfo, CollectedOutput } from '@deepseek-ai/dsh-shell'
+import { signalExitStatus } from '@deepseek-ai/dsh-shell'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
 
@@ -75,7 +76,10 @@ export function renderPwshResult(
   // command failure: the reason tells the model not to retry.
   if (result.stopped !== undefined) markers.push(`[stopped: ${result.stopped}]`)
   if (result.signal !== null) {
-    markers.push(`[killed by signal: ${result.signal}]`)
+    // Name the signal so the model sees the death cause, and append the POSIX
+    // 128 + signum status when the platform knows a number for it.
+    const status = signalExitStatus(result.signal)
+    markers.push(status === undefined ? `[killed by signal: ${result.signal}]` : `[killed by signal: ${result.signal} (exit code: ${status})]`)
   } else if (result.exitCode !== 0) {
     markers.push(`[exit code: ${result.exitCode}]`)
   }

@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { parseExitStatus } from '../src/render.ts'
+import { parseExitStatus, signalExitStatus } from '../src/render.ts'
 
 describe('parseExitStatus', () => {
   it('recovers a clean exit 0 with the body verbatim when no marker is present', () => {
@@ -24,13 +24,33 @@ describe('parseExitStatus', () => {
   })
 
   it('recovers a signal kill ahead of any non-zero exit marker', () => {
-    expect(parseExitStatus('gone\n[killed by signal: SIGKILL]')).toEqual({ body: 'gone', signal: 'SIGKILL' })
+    expect(parseExitStatus('gone\n[killed by signal: SIGKILL (exit code: 137)]')).toEqual({ body: 'gone', signal: 'SIGKILL' })
     // A fake signal marker with no leading newline is output, not a kill.
-    expect(parseExitStatus('[killed by signal: SIGKILL]')).toEqual({ body: '[killed by signal: SIGKILL]', exitCode: 0 })
+    expect(parseExitStatus('[killed by signal: SIGKILL (exit code: 137)]')).toEqual({ body: '[killed by signal: SIGKILL (exit code: 137)]', exitCode: 0 })
   })
 
   it('keeps markers no pill shows (timeout) in the body', () => {
     expect(parseExitStatus('slow\n[timed out after 100ms]\n[exit code: 143]'))
       .toEqual({ body: 'slow\n[timed out after 100ms]', exitCode: 143 })
+  })
+
+  it('strips the POSIX exit-code annotation from a signal marker', () => {
+    expect(parseExitStatus('gone\n[killed by signal: SIGKILL (exit code: 137)]'))
+      .toEqual({ body: 'gone', signal: 'SIGKILL' })
+    expect(parseExitStatus('gone\n[killed by signal: SIGTERM (exit code: 143)]'))
+      .toEqual({ body: 'gone', signal: 'SIGTERM' })
+  })
+})
+
+describe('signalExitStatus', () => {
+  it('maps POSIX signals to their conventional 128 + signum status', () => {
+    expect(signalExitStatus('SIGKILL')).toBe(137)
+    expect(signalExitStatus('SIGTERM')).toBe(143)
+    expect(signalExitStatus('SIGINT')).toBe(130)
+    expect(signalExitStatus('SIGHUP')).toBe(129)
+  })
+
+  it('returns undefined for a signal name without a platform number', () => {
+    expect(signalExitStatus('SIGHIPPO')).toBeUndefined()
   })
 })

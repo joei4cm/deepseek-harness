@@ -6,6 +6,8 @@
  * @module @deepseek-ai/dsh-shell/render
  */
 
+import os from 'node:os'
+
 /**
  * The exit status recovered from a rendered result, with the output body that
  * status was split off from.
@@ -36,8 +38,30 @@ export type ParsedExitStatus =
  */
 export function parseExitStatus(text: string): ParsedExitStatus {
   const signal = /\n\[killed by signal: ([^\]\n]+)\]$/.exec(text)
-  if (signal?.[1] !== undefined) return { body: text.slice(0, signal.index), signal: signal[1] }
+  if (signal?.[1] !== undefined) {
+    // A signal marker may carry its POSIX status as `(exit code: N)`; the
+    // pill shows the signal name, so the annotation is dropped here.
+    return { body: text.slice(0, signal.index), signal: signal[1].replace(/ \(exit code: \d+\)$/, '') }
+  }
   const exit = /\n\[exit code: (\d+)\]$/.exec(text)
   if (exit?.[1] !== undefined) return { body: text.slice(0, exit.index), exitCode: Number(exit[1]) }
   return { body: text, exitCode: 0 }
+}
+
+/**
+ * Recover the POSIX `128 + signum` exit status for a killed marker's signal
+ * name, when the platform exposes a number for it. POSIX shells report
+ * signal-killed children through `128 + signum` (`SIGKILL` → 137, `SIGTERM` →
+ * 143); the marker names the signal so the model sees the death cause, and
+ * appending the numeric status lets a caller record the conventional exit
+ * status instead of leaving it undetermined. Signals a Node build cannot name
+ * a number for (non-POSIX or an implementation's own alias) report no
+ * status.
+ * @param signal - the terminating signal name from a `ShellRunResult`.
+ * @returns the conventional exit status, or `undefined` when the signal has
+ *   no known number on this platform.
+ */
+export function signalExitStatus(signal: string): number | undefined {
+  const number = (os.constants.signals as Readonly<Record<string, number | undefined>>)[signal]
+  return number === undefined ? undefined : 128 + number
 }

@@ -577,7 +577,7 @@ describe('execution through the bash seam', () => {
     bash.handler = () => runResult('', { timedOut: true, exitCode: null, signal: 'SIGTERM', timeoutMs: 500 })
     const timedOut = await call(ctx, 'pwsh', { command: 'slow', description: 'slow' })
     // A timeout kill carries both facts, mirroring the bash tool's markers.
-    expect(text(timedOut)).toBe('(no output)\n[timed out after 500ms]\n[killed by signal: SIGTERM]')
+    expect(text(timedOut)).toBe('(no output)\n[timed out after 500ms]\n[killed by signal: SIGTERM (exit code: 143)]')
   })
 
   it('renders the truncation notice with (unavailable) when no spill path exists', async () => {
@@ -1068,7 +1068,7 @@ describe('UI presentation', () => {
     const args = { command: 'x', description: 'x' }
     expect(present?.presentResult?.(args, { content: [{ type: 'text', text: 'oops\n[exit code: 3]' }], isError: false }))
       .toEqual({ card: 'terminal', output: 'oops', exitCode: 3 })
-    expect(present?.presentResult?.(args, { content: [{ type: 'text', text: 'gone\n[killed by signal: SIGKILL]' }], isError: false }))
+    expect(present?.presentResult?.(args, { content: [{ type: 'text', text: 'gone\n[killed by signal: SIGKILL (exit code: 137)]' }], isError: false }))
       .toEqual({ card: 'terminal', output: 'gone', signal: 'SIGKILL' })
   })
 
@@ -1117,8 +1117,8 @@ describe('UI presentation', () => {
     const out = ctx.tools.get('pwsh')!.presentResult!(args, { content: [{ type: 'text', text: '[exit code: 5]' }], isError: false })
     expect(out).toEqual({ card: 'terminal', output: '[exit code: 5]', exitCode: 0 })
     // Same for a fake signal marker with no leading newline.
-    const sig = ctx.tools.get('pwsh')!.presentResult!(args, { content: [{ type: 'text', text: '[killed by signal: SIGKILL]' }], isError: false })
-    expect(sig).toEqual({ card: 'terminal', output: '[killed by signal: SIGKILL]', exitCode: 0 })
+    const sig = ctx.tools.get('pwsh')!.presentResult!(args, { content: [{ type: 'text', text: '[killed by signal: SIGKILL (exit code: 137)]' }], isError: false })
+    expect(sig).toEqual({ card: 'terminal', output: '[killed by signal: SIGKILL (exit code: 137)]', exitCode: 0 })
   })
 
   it('presentResult: a run_in_background ack is a generic card and carries no exit pill', async () => {
@@ -1176,6 +1176,18 @@ describe('renderPwshResult sandbox markers', () => {
 
   it('a confined run without a denial adds no sandbox marker', () => {
     expect(renderPwshResult({ ...base, sandbox: { mode: 'read-only', denied: false } })).toBe('out\n')
+  })
+
+  it('names the signal and appends its POSIX status', () => {
+    expect(renderPwshResult({ ...base, exitCode: null, signal: 'SIGKILL' }))
+      .toBe('out\n[killed by signal: SIGKILL (exit code: 137)]')
+    expect(renderPwshResult({ ...base, exitCode: null, signal: 'SIGTERM', timedOut: true }))
+      .toBe('out\n[timed out after 1000ms]\n[killed by signal: SIGTERM (exit code: 143)]')
+  })
+
+  it('omits the POSIX annotation for a signal the platform cannot number', () => {
+    expect(renderPwshResult({ ...base, exitCode: null, signal: 'SIGHIPPO' }))
+      .toBe('out\n[killed by signal: SIGHIPPO]')
   })
 })
 

@@ -86,7 +86,7 @@ describe('terminalCardModel', () => {
   })
 
   it('names a recorded signal without substituting an exit code', () => {
-    const model = terminalCardModel(settled({ content: [{ type: 'text', text: 'gone\n[killed by signal: SIGTERM]' }] }))
+    const model = terminalCardModel(settled({ content: [{ type: 'text', text: 'gone\n[killed by signal: SIGTERM (exit code: 143)]' }] }))
     expect(terminalExitLabel(model, enT)).toBe('signal SIGTERM')
   })
 
@@ -123,7 +123,7 @@ describe('terminalCardModel', () => {
       },
     })
     expect(terminalCardModel(settled({
-      content: [{ type: 'text', text: 'gone\n[killed by signal: SIGTERM]' }],
+      content: [{ type: 'text', text: 'gone\n[killed by signal: SIGTERM (exit code: 143)]' }],
     }))?.card).toMatchObject({ output: 'gone', signal: 'SIGTERM' })
   })
 
@@ -134,7 +134,7 @@ describe('terminalCardModel', () => {
       content: [{ type: 'text', text: 'boom\n[exit code: 2]' }],
     }))!)).toBe(true)
     expect(terminalFailed(terminalCardModel(settled({
-      content: [{ type: 'text', text: 'gone\n[killed by signal: SIGTERM]' }],
+      content: [{ type: 'text', text: 'gone\n[killed by signal: SIGTERM (exit code: 143)]' }],
     }))!)).toBe(true)
     expect(terminalFailed(terminalCardModel(settled())!)).toBe(false)
     expect(terminalFailed(terminalCardModel(running())!)).toBe(false)
@@ -284,7 +284,7 @@ describe('terminalCardModel', () => {
   it.each(['bash', 'pwsh'])('does not infer %s exit status from a spilled preview', (name) => {
     const notice = '(Omitted 50000 bytes. Full formatted result stored at: /spill/output.txt. Read the file.)'
     for (const parentCallId of [undefined, 'parent']) {
-      for (const preview of ['failed\n[exit code: 7]', 'killed\n[killed by signal: SIGTERM]', 'partial', '']) {
+      for (const preview of ['failed\n[exit code: 7]', 'killed\n[killed by signal: SIGTERM (exit code: 143)]', 'partial', '']) {
         expect(terminalCardModel(settled({
           ...parentCallId === undefined ? {} : { parentCallId },
           call: { name, argsRaw: ARGS },

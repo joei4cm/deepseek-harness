@@ -302,7 +302,7 @@ describe('bash tool', () => {
     const ctx = await setup()
     const result = await call(ctx, 'bash', { command: 'sleep 60', description: 'test command', timeoutMs: 100 })
     expect(result.isError).toBe(false)
-    expect(text(result)).toBe('(no output)\n[timed out after 100ms]\n[killed by signal: SIGTERM]')
+    expect(text(result)).toBe('(no output)\n[timed out after 100ms]\n[killed by signal: SIGTERM (exit code: 143)]')
   })
 
   it('reports a timeout even when the command traps the signal and exits 0', async () => {
@@ -1144,7 +1144,12 @@ describe('renderResult', () => {
 
   it('renders signal kills without the timeout marker when not timed out', () => {
     expect(renderResult({ ...base, exitCode: null, signal: 'SIGKILL' }))
-      .toBe('(no output)\n[killed by signal: SIGKILL]')
+      .toBe('(no output)\n[killed by signal: SIGKILL (exit code: 137)]')
+  })
+
+  it('omits the POSIX exit-code annotation for a signal the platform cannot number', () => {
+    expect(renderResult({ ...base, exitCode: null, signal: 'SIGHIPPO' as NodeJS.Signals }))
+      .toBe('(no output)\n[killed by signal: SIGHIPPO]')
   })
 
   it('reports a timeout that exited 0 (trapped signal) without a kill marker', () => {
@@ -1154,12 +1159,12 @@ describe('renderResult', () => {
 
   it('orders the timeout marker before a kill marker', () => {
     expect(renderResult({ ...base, exitCode: null, signal: 'SIGTERM', timedOut: true }))
-      .toBe('(no output)\n[timed out after 1000ms]\n[killed by signal: SIGTERM]')
+      .toBe('(no output)\n[timed out after 1000ms]\n[killed by signal: SIGTERM (exit code: 143)]')
   })
 
   it('reports an outside stop by its reason, ahead of the signal marker the exit pill parses', () => {
     expect(renderResult({ ...base, exitCode: null, signal: 'SIGTERM', stopped: 'cancelled by the user' }))
-      .toBe('(no output)\n[stopped: cancelled by the user]\n[killed by signal: SIGTERM]')
+      .toBe('(no output)\n[stopped: cancelled by the user]\n[killed by signal: SIGTERM (exit code: 143)]')
   })
 
   it('notes truncation with a fallback when the spill path is missing', () => {
@@ -1218,7 +1223,7 @@ describe('tool-owned UI presentation (presentCall / presentResult)', () => {
     const args = { command: 'x', description: 'x' }
     const nonzero = ctx.tools.get('bash')!.presentResult!(args, { content: [{ type: 'text', text: 'oops\n[exit code: 3]' }], isError: false })
     expect(nonzero).toEqual({ card: 'terminal', output: 'oops', exitCode: 3 })
-    const killed = ctx.tools.get('bash')!.presentResult!(args, { content: [{ type: 'text', text: 'gone\n[killed by signal: SIGKILL]' }], isError: false })
+    const killed = ctx.tools.get('bash')!.presentResult!(args, { content: [{ type: 'text', text: 'gone\n[killed by signal: SIGKILL (exit code: 137)]' }], isError: false })
     expect(killed).toEqual({ card: 'terminal', output: 'gone', signal: 'SIGKILL' })
   })
 
@@ -1272,8 +1277,8 @@ describe('tool-owned UI presentation (presentCall / presentResult)', () => {
     expect(out).toEqual({ card: 'terminal', output: '[exit code: 5]', exitCode: 0 })
     // Unparsed marker-like text is real output, so it is NOT stripped from the body.
     // Same for a fake signal marker with no leading newline.
-    const sig = ctx.tools.get('bash')!.presentResult!(args, { content: [{ type: 'text', text: '[killed by signal: SIGKILL]' }], isError: false })
-    expect(sig).toEqual({ card: 'terminal', output: '[killed by signal: SIGKILL]', exitCode: 0 })
+    const sig = ctx.tools.get('bash')!.presentResult!(args, { content: [{ type: 'text', text: '[killed by signal: SIGKILL (exit code: 137)]' }], isError: false })
+    expect(sig).toEqual({ card: 'terminal', output: '[killed by signal: SIGKILL (exit code: 137)]', exitCode: 0 })
   })
 
   it('bash presentCall/presentResult: a run_in_background call is a generic card and its ack carries no exit pill', async () => {
