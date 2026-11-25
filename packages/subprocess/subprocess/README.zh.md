@@ -77,7 +77,7 @@ const output = handle.collected.stdout?.readFrom(0)
 
 ### 每个子进程起步时的环境
 
-子进程永远不会隐式继承 harness 的环境秘密：形似凭据的名称与环境中的 `DSH_*` 事实都会被清除，调用方显式的 `env` 在该清除之后合并。有意转发的凭据或当前的 `DSH_*` 部署事实仍会到达子进程；显式的 `undefined` 墓碑值则移除一个普通的环境项。Git 的命令行配置按一组整体移除（`GIT_CONFIG_COUNT`、`GIT_CONFIG_PARAMETERS`、`GIT_CONFIG_KEY_n`、`GIT_CONFIG_VALUE_n`）：凭据模式只会命中 `GIT_CONFIG_KEY_n`，一旦计数器与键分离，子进程内所有 `git` 调用都会在读取配置文件之前直接 fatal。
+子进程永远不会隐式继承 harness 的环境秘密：形似凭据的名称与环境中的 `DSH_*` 事实都会被清除，调用方显式的 `env` 在该清除之后合并。有意转发的凭据或当前的 `DSH_*` 部署事实仍会到达子进程；显式的 `undefined` 墓碑值则移除一个普通的环境项。Git 的命令行配置按一组整体移除（`GIT_CONFIG_COUNT`、`GIT_CONFIG_PARAMETERS`、`GIT_CONFIG_KEY_n`、`GIT_CONFIG_VALUE_n`）：凭据模式只会命中 `GIT_CONFIG_KEY_n`，一旦计数器与键分离，子进程内所有 `git` 调用都会在读取配置文件之前直接 fatal。值这一半可能直接携带请求头本身（`http.extraHeader` 配 `AUTHORIZATION` 值），因此整组移除同时也把该凭据挡在子进程之外。
 
 ### 可能出错的地方
 
