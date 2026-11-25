@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runInNewContext } from 'node:vm'
 import { createHtmlDocument } from '../src/client/html/bootstrap.ts'
 import { decodeText, encodeText } from '../src/client/html/bytes.ts'
+import { EXTERNAL_LINK_MESSAGE } from '../src/client/html/external-link.ts'
 
 afterEach(() => { vi.restoreAllMocks() })
 
@@ -12,14 +13,33 @@ function run(html: string) {
   const write = vi.fn<(html: string) => void>()
   const close = vi.fn()
   const createObjectURL = vi.fn<(blob: Blob) => string>().mockImplementation(() => `blob:null/resource-${createObjectURL.mock.calls.length}`)
+  const listeners = new Map<string, (event: unknown) => void>()
+  const postMessage = vi.fn()
   const script = html.slice(html.indexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'))
   runInNewContext(script, {
-    document: { open, write, close }, URL: { createObjectURL }, Blob, DOMParser, atob, TextDecoder,
+    document: { open, write, close, baseURI: 'blob:null/preview' },
+    window: { addEventListener: (type: string, listener: (event: unknown) => void) => { listeners.set(type, listener) } },
+    parent: { postMessage },
+    navigator: { userActivation: { isActive: true } },
+    URL: Object.assign(function URLStub(input: string, base?: string) { return new URL(input, base) }, { createObjectURL }),
+    Blob, DOMParser, atob, TextDecoder,
   })
-  return { open, write, close, createObjectURL, document: new DOMParser().parseFromString(write.mock.calls[0]![0], 'text/html') }
+  return {
+    open, write, close, createObjectURL, postMessage, listeners,
+    document: new DOMParser().parseFromString(write.mock.calls[0]![0], 'text/html'),
+  }
 }
 
 const utf8 = (text: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(text)
+
+/** One click on a link, shaped like the event the frame receives. */
+function click(listeners: Map<string, (event: unknown) => void>, href: string, options: { trusted?: boolean; active?: boolean } = {}) {
+  const anchor = new DOMParser().parseFromString(`<a href="${href}">link</a>`, 'text/html').querySelector('a')!
+  const preventDefault = vi.fn()
+  const event = { isTrusted: options.trusted ?? true, target: anchor, preventDefault }
+  listeners.get('click')?.(event)
+  return { preventDefault }
+}
 
 describe('HTML bootstrap', () => {
   it('carries UTF-8 and script-ending text as data, then writes the unchanged complete HTML', () => {
@@ -52,10 +72,36 @@ describe('HTML bootstrap', () => {
     expect(result.document.documentElement.lang).toBe('en')
   })
 
+  it('forwards a trusted click on an HTTP(S) link to the application and keeps the frame in place', () => {
+    const result = run(createHtmlDocument({ data: utf8('<p><a href="https://example.invalid/a">link</a></p>'), assets: [] }))
+    const event = click(result.listeners, 'https://example.invalid/a')
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(result.postMessage).toHaveBeenCalledExactlyOnceWith(
+      { type: EXTERNAL_LINK_MESSAGE, url: 'https://example.invalid/a' },
+      '*',
+    )
+  })
+
+  it('leaves links the application may not open to the frame itself', () => {
+    const result = run(createHtmlDocument({ data: utf8('<p>link</p>'), assets: [] }))
+    for (const href of ['#section', 'javascript:alert(1)', 'mailto:someone@example.invalid', './relative.html']) {
+      const event = click(result.listeners, href)
+      expect(event.preventDefault).not.toHaveBeenCalled()
+    }
+    expect(result.postMessage).not.toHaveBeenCalled()
+  })
+
+  it('ignores a click the frame itself produced', () => {
+    const result = run(createHtmlDocument({ data: utf8('<p>link</p>'), assets: [] }))
+    const event = click(result.listeners, 'https://example.invalid/a', { trusted: false })
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(result.postMessage).not.toHaveBeenCalled()
+  })
+
   it('rejects non-UTF-8 root and asset bytes before creating an iframe document', () => {
     expect(() => createHtmlDocument({ data: utf8('<p>root</p>'), assets: [{ kind: 'script', reference: 'bad.js', data: new Uint8Array([255]) }] })).toThrow()
     expect(() => createHtmlDocument({ data: new Uint8Array([255]), assets: [] })).toThrow()
-    expect(decodeText(utf8('雪\u2028\u2029'))).toBe('雪\u2028\u2029')
+    expect(decodeText(utf8('雪  '))).toBe('雪  ')
   })
 
   it('base64-encodes a large UTF-8 payload in browser-safe chunks', () => {

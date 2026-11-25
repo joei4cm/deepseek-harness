@@ -41,6 +41,8 @@ Electron 在 `userData/desktop/locale-cache` 缓存最近确认的界面语言�
 
 Electron 为每个自行启动的 Host 进程生成新的随机凭据。收到子进程的 `starting` 消息后，主进程通过私有 `desktop-auth` IPC 消息交付凭据。Host 创建 owner Peer 并注册 Desktop 认证 Provider，然后发送唯一的 `ready` 消息，携带普通 Host URL 和该 Peer 的启动注入。Electron 将凭据保存在主进程内存中，为发往该 Host 的 HTTP 和 WebSocket 请求附加凭据；渲染进程只接收启动数据。Desktop 在就绪后直接继续启动，无需浏览器 Token URL 换 Cookie 的步骤。等待凭据期间收到 shutdown 时，Host 回复 `shutdown-complete` 并以状态0退出；父通道断开时以状态0退出，不启动 profile。非法或重复凭据交付仍作为认证失败处理。
 
+离开应用的链接只有在共享 URL 策略接受后才会打开系统浏览器：必须是不带凭据的绝对 HTTP(S) URL，且不能是应用自身 Host 的端口或其回环名称。无法解析的 URL 不会打开任何内容。承载不可信文件内容的框架（以 Blob URL 标识）不得自行导航到外部站点；此类链接由应用自行打开。
+
 Desktop 绑定 `127.0.0.1`，即 Electron 为就绪 URL 与 WebSocket 凭据过滤器拨号的地址。WebSocket 流按 Host 监听器使用 `ws:` 或 `wss:`；附加凭据要求 authority 与 scheme 均匹配。
 
 应用菜单第一项“**关于 DeepSeek Harness**”打开 Electron 原生关于面板，展示应用图标、产品名称和当前安装的发布版本。菜单文案跟随桌面壳的语言。macOS 的隐藏、隐藏其他、显示全部和退出条目使用本地化文案，隐藏和退出条目包含 DeepSeek Harness 产品名称。这些条目保留原生动作和快捷键。macOS 从应用包读取图标，因此未打包的开发启动会显示 Electron 图标；Windows 使用随包分发的 PNG。

@@ -1688,6 +1688,32 @@ describe('desktop main startup', () => {
     expect(harness.openExternal).not.toHaveBeenCalled()
   })
 
+  it('refuses unsafe external links and keeps a preview frame from navigating away', async () => {
+    await readyForUpdate()
+    const window = harness.windows[0]!
+    const openWindow = window.webContents.setWindowOpenHandler.mock.calls[0]![0] as
+      (details: { url: string }) => { action: string }
+    // The application Host owns its own port and never opens in an external browser.
+    expect(openWindow({ url: 'http://127.0.0.1:3080/' })).toEqual({ action: 'deny' })
+    expect(openWindow({ url: 'http://localhost:3080/' })).toEqual({ action: 'deny' })
+    expect(openWindow({ url: 'not a url' })).toEqual({ action: 'deny' })
+    expect(openWindow({ url: 'https://user@example.com/' })).toEqual({ action: 'deny' })
+    expect(harness.openExternal).not.toHaveBeenCalled()
+    const preview = { preventDefault: vi.fn(), isMainFrame: false, frame: { url: 'blob:https://app.invalid/preview' }, url: 'https://example.invalid/hijack' }
+    window.webContents.emit('will-frame-navigate', preview)
+    expect(preview.preventDefault).toHaveBeenCalledOnce()
+    expect(harness.openExternal).not.toHaveBeenCalled()
+    const embedded = { preventDefault: vi.fn(), isMainFrame: false, frame: { url: 'https://embed.invalid/page' }, url: 'https://embed.invalid/other' }
+    window.webContents.emit('will-frame-navigate', embedded)
+    expect(embedded.preventDefault).not.toHaveBeenCalled()
+    const application = { preventDefault: vi.fn(), isMainFrame: true, frame: { url: 'dsh-app://app/' }, url: 'https://example.invalid/page' }
+    window.webContents.emit('will-frame-navigate', application)
+    expect(application.preventDefault).not.toHaveBeenCalled()
+    const internal = { preventDefault: vi.fn(), isMainFrame: false, frame: { url: 'blob:https://app.invalid/preview' }, url: 'blob:https://app.invalid/other' }
+    window.webContents.emit('will-frame-navigate', internal)
+    expect(internal.preventDefault).not.toHaveBeenCalled()
+  })
+
   async function readyForUpdate() {
     await import('../src/main.ts')
     await harness.preparing.promise

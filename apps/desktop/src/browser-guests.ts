@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { app, session, type BrowserWindow, type Session, type WebContents } from 'electron'
 import type { DesktopBrowserLeaseId, DesktopBrowserOpenRequest, DesktopBrowserReservation } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
 import { DESKTOP_IPC } from './ipc.ts'
+import { isApplicationHost, openableExternalUrl } from './external-navigation.ts'
 
 interface GuestLease {
   readonly owner: WebContents
@@ -148,23 +149,12 @@ export class DesktopBrowserGuests {
       const url = new URL(details.url)
       const network = ['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol)
       callback({ cancel: network
-        ? url.username !== '' || url.password !== '' || this.isApplicationHost(url)
+        ? url.username !== '' || url.password !== '' || isApplicationHost(url, this.hostUrl())
         : !['about:', 'data:', 'blob:'].includes(url.protocol) })
     })
   }
 
   private allowedNavigation(value: string): boolean {
-    if (!URL.canParse(value)) return false
-    const url = new URL(value)
-    return ['http:', 'https:'].includes(url.protocol) && url.username === '' && url.password === ''
-      && !this.isApplicationHost(url)
-  }
-
-  private isApplicationHost(url: URL): boolean {
-    const value = this.hostUrl()
-    if (value === undefined) return false
-    const host = new URL(value)
-    return url.port === host.port
-      && (url.hostname === host.hostname || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+    return openableExternalUrl(value, this.hostUrl()) !== undefined
   }
 }

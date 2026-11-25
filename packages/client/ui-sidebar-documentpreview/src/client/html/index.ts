@@ -37,6 +37,9 @@ export function apply(ctx: Context): void {
           const file = hostFileOf(address)
           return ctx.remote.workspaceFiles.readBytes(file.sessionId, relativePath, { baseFile: file.path }, signal)
         },
+        // The preview frame posts a link it resolved; the application opens it
+        // in the user's browser rather than inside the preview.
+        openExternalLink: (url) => { window.open(url, '_blank', 'noopener,noreferrer') },
       }),
     }, HtmlBody,
   )))

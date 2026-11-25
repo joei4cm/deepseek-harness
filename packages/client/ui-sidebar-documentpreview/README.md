@@ -54,6 +54,8 @@ Coding Tools selects the HTML preview policy in both Web and desktop. The render
 
 Both HTML modes set the initial iframe name to `dsh-sidebar-html-<tab-id>` for Desktop shortcut routing. This correlation does not grant the preview access to the parent document.
 
+An HTTP(S) link in the scripted preview opens outside the preview instead of navigating inside it. The frame's click bridge posts the resolved URL to the application, which accepts only absolute HTTP(S) URLs without credentials, allows at most five requests in five seconds, and opens a repeated link once. An in-page anchor stays in the frame, and a link the application refuses leaves the frame untouched.
+
 The body reads its record, navigation and lifetime through `useTabInfo().tab`. `useResource<'file'>(tab.contentId)` supplies metadata; ordinary inject callbacks supply content reads:
 
 - The resource snapshot contains only `status`, `value`, and `failure`; `value` is `WorkspaceFileStat` metadata. Content reads do not wait for the first metadata frame once the provider is available. Observation failures take precedence over Preview's change notice; loaded content remains while metadata is unavailable.

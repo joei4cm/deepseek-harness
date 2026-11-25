@@ -54,6 +54,8 @@ Web 和桌面端均通过代码工作工具选择 HTML 预览策略。渲染器�
 
 两种 HTML 模式均将 iframe 初始名称设为 `dsh-sidebar-html-<tab-id>`，供 Desktop 快捷键路由关联目标。这种关联不授予预览访问父文档的权限。
 
+支持脚本的预览中的 HTTP(S) 链接在预览之外打开，而不是在预览内导航。框架内的点击桥接把解析后的 URL 发送给应用；应用只接受不带凭据的绝对 HTTP(S) URL，五秒内最多接受五个请求，同一链接的重复请求只打开一次。页内锚点仍留在框架内，应用拒绝的链接不会改动框架。
+
 正文通过 `useTabInfo().tab` 读取记录、导航和生命周期。`useResource<'file'>(tab.contentId)` 提供元数据，普通 inject 回调提供内容读取：
 
 - 资源快照仅包含 `status`、`value` 和 `failure`；`value` 是 `WorkspaceFileStat` 元数据。提供方可用后，内容读取无需等待首个元数据帧。观察失败优先于 Preview 的变更提示显示；元数据不可用时保留已加载内容。

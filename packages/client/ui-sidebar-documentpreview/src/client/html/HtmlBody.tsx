@@ -1,5 +1,5 @@
 /** Static or interactive HTML in an opaque iframe, without parent application access. */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -7,6 +7,7 @@ import type { DocumentPreviewProps } from '../document/contract.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import { createHtmlDocument } from './bootstrap.ts'
 import { createBasicHtmlDocument } from './basic-document.ts'
+import { createExternalLinkGate, externalLinkRequest } from './external-link.ts'
 import { packHtml } from './pack.ts'
 import { createReadHtmlRelative } from './read-relative.ts'
 import type { ReadHtmlRelated } from './read-relative.ts'
@@ -16,24 +17,28 @@ import css from './HtmlBody.module.css'
 /** Standard document inputs plus this renderer's dictionary. */
 export type HtmlBodyProps = DocumentPreviewProps & PropsLocale<'documentHtml'> & InjectFace<HtmlBodyInjected>
 
-/** Related-file reader and accepted preview mode supplied by the plugin. */
+/** Related-file reader, accepted preview mode, and external link opener supplied by the plugin. */
 export interface HtmlBodyInjected {
   hooks: { interactivePreview: ObservableSnapshot<boolean> }
   /** Ordinary Remote callback bound by this renderer's Slot inject. */
   readonly readRelated: ReadHtmlRelated
+  /** Opens an external HTTP(S) link outside the preview frame. */
+  readonly openExternalLink: (url: string) => void
 }
 
 type FrameInput = Pick<HtmlBodyProps, 'resourceAddress' | 'readRelated' | 'addResource' | 'setResources'> & {
   readonly data: Uint8Array<ArrayBuffer>
   readonly signal: AbortSignal
   readonly frameName: string
+  readonly openExternalLink: (url: string) => void
 }
 
 type FrameState = Pick<FrameInput, 'data' | 'readRelated'> & { readonly url: string | undefined }
 
 /** One mounted file owns its root Blob; replacing content also replaces the browsing context. */
-function HtmlFrame({ data, resourceAddress, readRelated, addResource, setResources, signal, frameName, t }: FrameInput & { t: HtmlBodyProps['t'] }): ReactNode {
+function HtmlFrame({ data, resourceAddress, readRelated, addResource, setResources, signal, frameName, openExternalLink, t }: FrameInput & { t: HtmlBodyProps['t'] }): ReactNode {
   const [frame, setFrame] = useState<FrameState>()
+  const element = useRef<HTMLIFrameElement | null>(null)
   useEffect(() => {
     const controller = new AbortController()
     const resources = new Set<string>()
@@ -60,12 +65,29 @@ function HtmlFrame({ data, resourceAddress, readRelated, addResource, setResourc
       if (url !== undefined) URL.revokeObjectURL(url)
     }
   }, [data, readRelated, resourceAddress, addResource, setResources, signal])
+  const frameUrl = frame?.url
+  useEffect(() => {
+    const preview = element.current
+    if (preview === null) return
+    // The preview frame posts a link it resolved; only that frame's own
+    // messages count, and a bounded number of them open a link.
+    const gate = createExternalLinkGate()
+    const listener = (event: MessageEvent): void => {
+      if (event.source !== preview.contentWindow) return
+      const url = externalLinkRequest(event.data)
+      if (url === undefined) return
+      if (!gate.accept(url)) return
+      openExternalLink(url)
+    }
+    window.addEventListener('message', listener)
+    return () => { window.removeEventListener('message', listener) }
+  }, [frameUrl, openExternalLink])
 
   if (frame?.data !== data || frame.readRelated !== readRelated) {
     return <LoadingIndicator label={t('loading')} />
   }
   if (frame.url === undefined) return <p className={css.status} role="alert">{t('failed')}</p>
-  return <iframe key={frame.url} name={frameName} className={css.frame} src={frame.url} sandbox="allow-scripts" title={t('frame')} data-html-preview />
+  return <iframe key={frame.url} ref={element} name={frameName} className={css.frame} src={frame.url} sandbox="allow-scripts" title={t('frame')} data-html-preview />
 }
 
 /**
@@ -74,7 +96,7 @@ function HtmlFrame({ data, resourceAddress, readRelated, addResource, setResourc
  * @returns an isolated HTML document, or nothing for text delivery.
  */
 export function HtmlBody({
-  content, resourceAddress, readRelated, useTabInfo, useInteractivePreview, addResource, setResources, t,
+  content, resourceAddress, readRelated, useTabInfo, useInteractivePreview, addResource, setResources, openExternalLink, t,
 }: HtmlBodyProps): ReactNode {
   const interactivePreview = useInteractivePreview(value => value)
   const { tab } = useTabInfo()
@@ -85,7 +107,8 @@ export function HtmlBody({
   const frameName = `dsh-sidebar-html-${tab.id}`
   if (!interactivePreview) return <BasicHtmlFrame data={content.data} frameName={frameName} t={t} />
   return <HtmlFrame key={resourceAddress} data={content.data} resourceAddress={resourceAddress}
-    readRelated={readRelated} signal={tab.signal} frameName={frameName} addResource={addResource} setResources={setResources} t={t} />
+    readRelated={readRelated} signal={tab.signal} frameName={frameName} openExternalLink={openExternalLink}
+    addResource={addResource} setResources={setResources} t={t} />
 }
 
 /** Static preview mounts a separate browsing context so a mode change retires running scripts. */

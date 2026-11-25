@@ -14,6 +14,7 @@ import type { DocumentBodyOwner } from '../src/client/document/contract.ts'
 import { textFace } from '../src/client/face.ts'
 import { HtmlBody } from '../src/client/html/HtmlBody.tsx'
 import type { HtmlBodyProps } from '../src/client/html/HtmlBody.tsx'
+import { EXTERNAL_LINK_MESSAGE } from '../src/client/html/external-link.ts'
 import { htmlBodyDefinition } from '../src/client/html/index.ts'
 import { en } from '../src/client/html/locales.ts'
 import { ADDRESS, ABSOLUTE_PATH, SESSION, TAB_ID, documentSlots, harness } from './fixtures.client.ts'
@@ -55,11 +56,26 @@ function props(text = '<p>hello</p>'): HtmlBodyProps {
     addResource: vi.fn(),
     setResources: vi.fn(),
     useResource: () => ({ value: undefined }),
+    openExternalLink: vi.fn(),
     t: key => translations.get(key) ?? key,
   } as HtmlBodyProps
 }
 
 const utf8 = (text: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(text)
+
+/**
+ * The frame's message listener mounts with React's passive effects, which can
+ * flush after the iframe is already observable; dispatch until the frame's own
+ * window provably opens a link before asserting on further posts.
+ */
+async function waitForLiveFrame(
+  source: MessageEventSource, url: string, openExternalLink: (url: string) => void,
+): Promise<void> {
+  await waitFor(() => {
+    window.dispatchEvent(new MessageEvent('message', { data: { type: EXTERNAL_LINK_MESSAGE, url }, source }))
+    expect(openExternalLink).toHaveBeenCalledWith(url)
+  })
+}
 
 describe('HtmlBody', () => {
   it.each(['css', 'js'] as const)('reloads the HTML when only its %s resource changes', async (extension) => {
@@ -181,6 +197,59 @@ describe('HtmlBody', () => {
     expect(advanced.getAttribute('sandbox')).toBe('allow-scripts')
     expect(readRelated).toHaveBeenCalledOnce()
     view.unmount()
+  })
+
+  it('opens an external link the preview frame posted, and refuses every other message', async () => {
+    const openExternalLink = vi.fn()
+    const view = render(<HtmlBody {...props()} openExternalLink={openExternalLink} />)
+    const iframe = (await screen.findByTitle(en.frame)) as HTMLIFrameElement
+    const source = iframe.contentWindow as MessageEventSource
+    expect(source).toBeTruthy()
+    const post = (data: unknown, from: unknown = source): void => {
+      window.dispatchEvent(new MessageEvent('message', { data, source: from as MessageEventSource }))
+    }
+    await waitForLiveFrame(source, 'https://example.invalid/a', openExternalLink)
+    post({ type: EXTERNAL_LINK_MESSAGE, url: 'https://example.invalid/a' })
+    expect(openExternalLink).toHaveBeenCalledOnce()
+    post({ type: EXTERNAL_LINK_MESSAGE, url: 'javascript:alert(1)' })
+    post({ type: 'other', url: 'https://example.invalid/b' })
+    post('https://example.invalid/c')
+    post({ type: EXTERNAL_LINK_MESSAGE, url: 'https://example.invalid/d' }, { other: true })
+    expect(openExternalLink).toHaveBeenCalledOnce()
+    view.unmount()
+  })
+
+  it('opens at most the bounded number of external links the preview frame posts', async () => {
+    const openExternalLink = vi.fn()
+    const view = render(<HtmlBody {...props()} openExternalLink={openExternalLink} />)
+    const iframe = (await screen.findByTitle(en.frame)) as HTMLIFrameElement
+    const source = iframe.contentWindow as MessageEventSource
+    await waitForLiveFrame(source, 'https://example.invalid/live', openExternalLink)
+    for (let index = 0; index < 7; index += 1) {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { type: EXTERNAL_LINK_MESSAGE, url: `https://example.invalid/${index}` },
+        source,
+      }))
+    }
+    expect(openExternalLink).toHaveBeenCalledTimes(5)
+    view.unmount()
+  })
+
+  it('does not open a link after the preview frame is replaced', async () => {
+    const openExternalLink = vi.fn()
+    const view = render(<HtmlBody {...props()} openExternalLink={openExternalLink} />)
+    const iframe = (await screen.findByTitle(en.frame)) as HTMLIFrameElement
+    const stale = iframe.contentWindow as MessageEventSource
+    view.rerender(<HtmlBody {...props('changed')} openExternalLink={openExternalLink} />)
+    const replacement = await screen.findByTitle(en.frame)
+    expect(replacement).not.toBe(iframe)
+    await waitForLiveFrame((replacement as HTMLIFrameElement).contentWindow as MessageEventSource,
+      'https://example.invalid/replacement', openExternalLink)
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { type: EXTERNAL_LINK_MESSAGE, url: 'https://example.invalid/stale' },
+      source: stale,
+    }))
+    expect(openExternalLink).toHaveBeenCalledTimes(1)
   })
 
   it('renders a Blob iframe with only scripts allowed, keeping it mounted for unrelated props', async () => {

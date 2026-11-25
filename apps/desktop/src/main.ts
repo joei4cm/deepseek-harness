@@ -44,6 +44,7 @@ import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { prepareDesktopUpdateWindow } from './update-window.ts'
 import { DesktopCommandManager } from './command-management.ts'
 import { serveWebDocument, forwardWebRequest, removeLegacyHostCookies } from './web-document.ts'
+import { openableExternalUrl } from './external-navigation.ts'
 import { DesktopFatalRecovery } from './fatal-recovery.ts'
 import { pruneCrashReports, RendererConsoleTail, writeCrashReport, type CrashReportSource } from './crash-report.ts'
 import { OperationJournal } from './operation-journal.ts'
@@ -261,7 +262,7 @@ function platformLoginUrl(authorizeUrl: string): string {
   return url.href
 }
 
-function createWindow(preload: string, show = false, primary = false): BrowserWindow {
+function createWindow(preload: string, show: boolean, primary: boolean, applicationHost: () => string | undefined): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -296,7 +297,8 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     },
   })
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (['http:', 'https:'].includes(new URL(url).protocol)) void shell.openExternal(url)
+    const openable = openableExternalUrl(url, applicationHost())
+    if (openable !== undefined) void shell.openExternal(openable)
     return { action: 'deny' }
   })
   if (process.platform === 'darwin' || process.platform === 'win32') {
@@ -367,13 +369,34 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     }
   })
   window.webContents.on('will-navigate', (event, url) => {
-    const destination = new URL(url)
-    const current = new URL(window.webContents.getURL())
-    if (destination.protocol !== `${SCHEME}:`
-      && !(destination.protocol === 'http:' && destination.origin === current.origin)) {
+    if (!URL.canParse(url)) {
       event.preventDefault()
-      if (['http:', 'https:'].includes(destination.protocol)) void shell.openExternal(url)
+      return
     }
+    const destination = new URL(url)
+    const currentUrl = window.webContents.getURL()
+    const current = URL.canParse(currentUrl) ? new URL(currentUrl) : undefined
+    if (destination.protocol !== `${SCHEME}:`
+      && !(destination.protocol === 'http:' && current !== undefined && destination.origin === current.origin)) {
+      event.preventDefault()
+      const openable = openableExternalUrl(url, applicationHost())
+      if (openable !== undefined) void shell.openExternal(openable)
+    }
+  })
+  // A preview document runs in an opaque sandboxed frame addressed by a Blob
+  // URL. It holds untrusted file content, so it may not navigate itself to an
+  // external site; the client opens external links itself instead.
+  window.webContents.on('will-frame-navigate', (event) => {
+    if (event.isMainFrame) return
+    const current = event.frame?.url
+    if (current === undefined || !current.startsWith('blob:')) return
+    if (!URL.canParse(event.url)) {
+      event.preventDefault()
+      return
+    }
+    const destination = new URL(event.url)
+    if (destination.protocol !== 'http:' && destination.protocol !== 'https:') return
+    event.preventDefault()
   })
   return window
 }
@@ -1329,7 +1352,7 @@ async function main(): Promise<void> {
     }
   }
   const createMainWindow = (): BrowserWindow => {
-    const window = createWindow(appPreload, false, true)
+    const window = createWindow(appPreload, false, true, () => hostUrl)
     mainWindow = window
     browserGuests.bind(window, (guest, name) => shortcuts.attachGuest(window, guest, name))
     shortcuts.attach(window)
