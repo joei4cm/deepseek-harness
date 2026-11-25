@@ -4,6 +4,8 @@
 
 Refs #14242
 
+2026-11-25 的 #14307 独立报告了同一根因，并补充两点：其一，plugin-manager 的 GitHub 连接检查 `git ls-remote` 走同一清洗，现场被误报为连接损坏；其二，报告现场 `GIT_CONFIG_KEY_0 = http.extraHeader`、`GIT_CONFIG_VALUE_0 = AUTHORIZATION: bearer …`——值这一半直接携带凭据头，整组移除因此同时是凭据收容，而不只是计数器修复（仅删 `COUNT` 的修法会把凭据头留在子进程里）。#14307 亦指出宽匹配 `/KEY/` 会误伤 `SSH_KEY_PATH` 等非凭据名，属另一独立议题，本 PR 不处理。
+
 ## Changes
 
 **Interface changes**
@@ -15,6 +17,7 @@ Refs #14242
 - `scrubbedParentEnv()` 新增一组剔除：`GIT_CONFIG_COUNT`、`GIT_CONFIG_PARAMETERS`、`GIT_CONFIG_KEY_n`、`GIT_CONFIG_VALUE_n` 视作一个原子组整体移除——子进程要么看到完整的环境配置组，要么完全看不到，不再出现「计数器在、键被剥」的半组状态。
 - 行为边界不变：调用方显式 `env` 仍在清洗之后合并，所以有意转发 `GIT_CONFIG_*` 值依然生效；`GIT_TERMINAL_PROMPT` 等不含凭据语义的普通 `GIT_*` 名字照常保留。
 - 该组剔除与 `DSH_*` 一样按大小写不敏感匹配（Windows 环境名不区分大小写）。
+- 键的一半已被上游工具剥掉（现场常见：只剩 `GIT_CONFIG_COUNT` + `GIT_CONFIG_VALUE_n`）时，剩余两半同样整组移除，凭据头不落子进程。
 
 **Module responsibilities and dependencies**
 
@@ -30,22 +33,26 @@ Refs #14242
 
 | 场景 | 期望 | 覆盖测试 |
 |---|---|---|
-| 环境带完整 `GIT_CONFIG_COUNT/KEY_n/VALUE_n/PARAMETERS` 组 | 全部移除，不留半组 | `scrubbedParentEnv drops Git command-line config as one group, never orphaning the counter` |
-| 普通 `GIT_*` 名字（`GIT_TERMINAL_PROMPT`） | 保留 | 同上 |
+| 环境带完整 `GIT_CONFIG_COUNT/KEY_n/VALUE_n/PARAMETERS` 组，值为凭据头 | 全部移除，凭据值不落子进程 | `scrubbedParentEnv drops Git command-line config as one group, never orphaning the counter` |
+| 键半已被剥的半组（只剩 `GIT_CONFIG_COUNT` + `GIT_CONFIG_VALUE_n`） | 剩余两半移除，凭据值不落子进程 | `scrubbedParentEnv drops a half-group whose key half the credential scrub already took` |
+| 普通 `GIT_*` 名字（`GIT_TERMINAL_PROMPT`） | 保留 | 同上第一条 |
 
 **Test entries**
 
 | 用例 | 覆盖行为 |
 |---|---|
-| `scrubbedParentEnv drops Git command-line config as one group, never orphaning the counter` | 组内四个名字同时存在时全部移除；`GIT_TERMINAL_PROMPT` 证明剔除是按名字组而非 `GIT_*` 前缀 |
+| `scrubbedParentEnv drops Git command-line config as one group, never orphaning the counter` | 组内四个名字同时存在时全部移除；`http.extraHeader`/`AUTHORIZATION` 值不得出现在子进程环境；`GIT_TERMINAL_PROMPT` 证明剔除是按名字组而非 `GIT_*` 前缀 |
+| `scrubbedParentEnv drops a half-group whose key half the credential scrub already took` | #14307 现场形态：`KEY_n` 已被凭据模式剥掉，`COUNT` 与 `VALUE_n` 仍整组移除且凭据值不落子进程 |
 | `scrubbedParentEnv drops credential-shaped and DSH_ names…`（既有） | 原有行为不回归 |
+
+阴性对照：临时去掉组剔除子句后重跑，上述两条新用例分别以「计数器残留」与「凭据值残留」失败（2 failed / 3 passed），恢复后 5 passed。
 
 命令与结果（本地运行）：
 
 ```
 pnpm exec vitest run packages/subprocess/subprocess/tests
   Test Files  4 passed (4)
-  Tests  17 passed (17)
+  Tests  18 passed (18)
 
 pnpm exec vitest run --coverage \
   --coverage.include='packages/subprocess/subprocess/src/**/*.ts' \
@@ -78,8 +85,8 @@ pnpm exec tsc -b tsconfig.host.json
 |:--|:--|--:|:--|
 | breakdown 问题拆解 | copilot 人工把关 | 70% | The Agent verified the reported mechanism against `scrubbedParentEnv` and located the repo's own earlier analysis (Agent Note + deferred product fix); the author pre-approved selection by the Agent's recommended order. |
 | design 方案设计 | auto 模型自主 | 90% | The Agent adopted the deferred design already documented in the repo's Agent Note: remove the whole GIT_CONFIG group in the shared scrub so deliberate forwards still override; the author has not reviewed the design. |
-| testing 验收测试 | auto 模型自主 | 90% | The Agent wrote the group-removal test covering all four names plus a surviving ordinary GIT_* name; the author has not reviewed the results. |
-| implementation 技术实现 | auto 模型自主 | 100% | The Agent wrote the group pattern, the test, both README revisions, and recorded the translation pair. |
+| testing 验收测试 | auto 模型自主 | 90% | The Agent wrote the group-removal test covering all four names plus a surviving ordinary GIT_* name, then added the half-group and credential-non-leak cases from #14307 with a negative control (removing the fix fails both cases); the author has not reviewed the results. |
+| implementation 技术实现 | auto 模型自主 | 100% | The Agent wrote the group pattern, both tests, both README revisions (including the credential-containment clause), and recorded the translation pair. |
 | review 评审处理 | n/a 暂不适用 | — | 尚未处理任何评审意见。 |
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
