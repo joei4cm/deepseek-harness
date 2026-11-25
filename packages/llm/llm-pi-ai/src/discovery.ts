@@ -28,6 +28,7 @@ import { INVALID_CREDENTIAL_CODE, LlmError } from '@deepseek-ai/dsh-llm'
 import type { LlmDiscoveredModel, LlmModelDiscoveryOperation } from '@deepseek-ai/dsh-llm'
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import { catalogModels } from './catalog.ts'
+import type { PiAiDiscoveryHeaderContext } from './types.ts'
 
 /**
  * Protocols whose model listing this module can read. OpenAI protocols use
@@ -316,6 +317,10 @@ export interface StoredModelDiscoveryProfile {
  * @param storedProfile - Host-owned headers and lazy credential resolution for
  *   the named route. It is read only on the path that reaches the network; the
  *   credential is resolved only when the draft carries none.
+ * @param prepareHeaders - host-owned contributor hook called on the wire path
+ *   after the route's deployment headers and the resolved credential and before
+ *   Harness attribution, mirroring inference ordering. A contributor's LlmError
+ *   keeps its own code; every other failure settles as DISCOVERY_FAILED.
  * @returns the advertised models in endpoint order.
  * @throws LlmError when the protocol has no readable listing, the endpoint
  *   refuses or fails the request, or the reply is not a model listing.
@@ -323,6 +328,7 @@ export interface StoredModelDiscoveryProfile {
 export async function discoverModels(
   request: LlmModelDiscoveryOperation,
   storedProfile?: () => StoredModelDiscoveryProfile | undefined,
+  prepareHeaders?: (request: PiAiDiscoveryHeaderContext, headers: Headers) => Headers,
 ): Promise<readonly LlmDiscoveredModel[]> {
   // A catalog route already has its answer, and a better one: the installed
   // entries carry context windows and output caps no listing endpoint reports.
@@ -367,19 +373,40 @@ export async function discoverModels(
   const stored = storedProfile?.()
   const supplied = request.apiKey ?? await stored?.resolveApiKey()
   const apiKey = supplied === undefined ? undefined : usableProbeKey(supplied)
+  let headers = new Headers(stored?.headers === undefined ? undefined : Object.entries(stored.headers))
+  headers.set('accept', 'application/json')
+  if (api === 'anthropic-messages') {
+    headers.set('anthropic-version', ANTHROPIC_VERSION)
+    if (apiKey !== undefined) headers.set('x-api-key', apiKey)
+  } else if (api === 'google-generative-ai') {
+    if (apiKey !== undefined) headers.set('x-goog-api-key', apiKey)
+  } else if (apiKey !== undefined) {
+    headers.set('authorization', `Bearer ${apiKey}`)
+  }
+  if (prepareHeaders !== undefined) {
+    const context: PiAiDiscoveryHeaderContext = Object.freeze({
+      ...request.provider === undefined ? {} : { provider: request.provider },
+      baseURL: request.baseURL,
+      api,
+    })
+    try {
+      headers = prepareHeaders(context, headers)
+    } catch (error: unknown) {
+      // A contributor that answers with an LlmError names its own failure;
+      // everything else reads as a discovery fault — matching the inference
+      // hook's policy that only contributor failures become coded errors.
+      if (error instanceof LlmError) throw error
+      throw new LlmError(
+        `pi-ai discovery header preparation failed for provider "${request.provider ?? ''}": ${
+          error instanceof Error ? error.message : 'the contributing plugin threw a non-Error value'
+        }`,
+        'DISCOVERY_FAILED', { cause: error },
+      )
+    }
+  }
+  for (const [name, value] of Object.entries(attributionHeaders())) headers.set(name, value)
   let response: Response
   try {
-    const headers = new Headers(stored?.headers === undefined ? undefined : Object.entries(stored.headers))
-    headers.set('accept', 'application/json')
-    if (api === 'anthropic-messages') {
-      headers.set('anthropic-version', ANTHROPIC_VERSION)
-      if (apiKey !== undefined) headers.set('x-api-key', apiKey)
-    } else if (api === 'google-generative-ai') {
-      if (apiKey !== undefined) headers.set('x-goog-api-key', apiKey)
-    } else if (apiKey !== undefined) {
-      headers.set('authorization', `Bearer ${apiKey}`)
-    }
-    for (const [name, value] of Object.entries(attributionHeaders())) headers.set(name, value)
     response = await fetch(url, {
       method: 'GET',
       headers,

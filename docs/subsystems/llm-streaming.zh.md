@@ -1269,6 +1269,32 @@ Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 
 ### `llm-pi-ai/*` events
 
+<a id="llm-pi-aidiscovery-headers--waterfall"></a>
+
+#### `llm-pi-ai/discovery-headers` — waterfall
+
+Prepare headers for one pi-ai model-discovery interrogation — the configuration-time `GET /models` probe — with the same listener contract as `llm-pi-ai/request-headers`: synchronous, must call next(), no retention of the header set. The hook runs after the named route's deployment headers and the resolved credential, and before Harness attribution is applied. A listener's LlmError keeps its code; other throws settle as DISCOVERY_FAILED.
+
+```ts cordis-catalog
+/**
+ * Prepare headers for one pi-ai model-discovery interrogation — the
+ * configuration-time `GET /models` probe — with the same listener contract
+ * as `llm-pi-ai/request-headers`: synchronous, must call next(), no
+ * retention of the header set. The hook runs after the named route's
+ * deployment headers and the resolved credential, and before Harness
+ * attribution is applied. A listener's LlmError keeps its code; other
+ * throws settle as DISCOVERY_FAILED.
+ * @mode waterfall
+ * @param request - the endpoint and protocol the listing request asks.
+ * @param headers - headers carrying the route's deployment headers and key.
+ * @param next - continue header preparation through the remaining listeners.
+ * @returns headers sent on the listing request, with attribution applied.
+ */
+'llm-pi-ai/discovery-headers'( request: PiAiDiscoveryHeaderContext, headers: Headers, next: () => Headers, ): Headers
+```
+
+Source: [`packages/llm/llm-pi-ai/src/index.ts`](../../packages/llm/llm-pi-ai/src/index.ts)
+
 <a id="llm-pi-airequest-headers--waterfall"></a>
 
 #### `llm-pi-ai/request-headers` — waterfall

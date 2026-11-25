@@ -75,11 +75,11 @@ import { discoverModels } from './discovery.ts'
 import type { StoredModelDiscoveryProfile } from './discovery.ts'
 import { registerPiAiFlows } from './login.ts'
 import { providerDefaultsOf } from './provider-data.ts'
-import type { PiAiRequestHeaderContext } from './types.ts'
+import type { PiAiDiscoveryHeaderContext, PiAiRequestHeaderContext } from './types.ts'
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
-export type { PiAiRequestHeaderContext } from './types.ts'
+export type { PiAiDiscoveryHeaderContext, PiAiRequestHeaderContext } from './types.ts'
 export { Config } from './config.ts'
 export type {
   Options,
@@ -113,6 +113,24 @@ declare module '@deepseek-ai/cordis' {
      * @returns headers passed to pi-ai after Harness attribution is applied.
      */
     'llm-pi-ai/request-headers'(request: PiAiRequestHeaderContext, headers: Headers, next: () => Headers): Headers
+
+    /**
+     * Prepare headers for one pi-ai model-discovery interrogation — the
+     * configuration-time `GET /models` probe — with the same listener contract
+     * as `llm-pi-ai/request-headers`: synchronous, must call next(), no
+     * retention of the header set. The hook runs after the named route's
+     * deployment headers and the resolved credential, and before Harness
+     * attribution is applied. A listener's LlmError keeps its code; other
+     * throws settle as DISCOVERY_FAILED.
+     * @mode waterfall
+     * @param request - the endpoint and protocol the listing request asks.
+     * @param headers - headers carrying the route's deployment headers and key.
+     * @param next - continue header preparation through the remaining listeners.
+     * @returns headers sent on the listing request, with attribution applied.
+     */
+    'llm-pi-ai/discovery-headers'(
+      request: PiAiDiscoveryHeaderContext, headers: Headers, next: () => Headers,
+    ): Headers
   }
 }
 
@@ -319,6 +337,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.llm.registerModelDiscovery(settingsNs, (request, signal) => discoverModels(
     { ...request, ...signal === undefined ? {} : { signal } },
     () => storedDiscoveryProfile(request.provider),
+    (discovery, headers) => ctx.waterfall('llm-pi-ai/discovery-headers', discovery, headers, () => headers),
   ))
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below. A bare

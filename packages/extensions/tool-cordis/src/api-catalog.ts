@@ -5903,6 +5903,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'reloads', description: 'Replaced plugins and their module locations.' }],
   },
   {
+    name: 'llm-pi-ai/discovery-headers',
+    mode: 'waterfall',
+    signature: '\'llm-pi-ai/discovery-headers\'( request: PiAiDiscoveryHeaderContext, headers: Headers, next: () => Headers, ): Headers',
+    summary: 'Prepare headers for one pi-ai model-discovery interrogation — the configuration-time `GET /models` probe — with the same listener contract as `llm-pi-ai/request-headers`: synchronous, must call next(), no retention of the header set.',
+    description: 'Prepare headers for one pi-ai model-discovery interrogation — the configuration-time `GET /models` probe — with the same listener contract as `llm-pi-ai/request-headers`: synchronous, must call next(), no retention of the header set. The hook runs after the named route\'s deployment headers and the resolved credential, and before Harness attribution is applied. A listener\'s LlmError keeps its code; other throws settle as DISCOVERY_FAILED.',
+    parameters: [{ name: 'request', description: 'the endpoint and protocol the listing request asks.' }, { name: 'headers', description: 'headers carrying the route\'s deployment headers and key.' }, { name: 'next', description: 'continue header preparation through the remaining listeners.' }],
+  },
+  {
     name: 'llm-pi-ai/request-headers',
     mode: 'waterfall',
     signature: '\'llm-pi-ai/request-headers\'(request: PiAiRequestHeaderContext, headers: Headers, next: () => Headers): Headers',
@@ -9001,6 +9009,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionSelection',
     declaration: 'export interface PermissionSelection {\n    currentValue: string;\n}',
+  },
+  {
+    name: 'PiAiDiscoveryHeaderContext',
+    declaration: 'export interface PiAiDiscoveryHeaderContext {\n    readonly provider?: string;\n    readonly baseURL: string;\n    readonly api: string;\n}',
   },
   {
     name: 'PiAiRequestHeaderContext',

@@ -159,6 +159,8 @@ Plugins can contribute model-hidden transport metadata through the synchronous `
 
 This event covers inference calls with or without a Session id, including auxiliary calls, but excludes model discovery. A contributor exception or invalid HTTP header fails the call with `REQUEST_HEADERS` before inference dispatch; no partially prepared request is sent. The failure identifies the provider and includes the contributor's top-level error message, which must exclude credentials and header values. Native header validation can echo values in a `TypeError`, so TypeError details and non-Error throws receive safe guidance instead; nested causes remain attached to the thrown error but are not copied into the public failure. Contributions do not change messages, tool schemas, or the Session log. Direct `PiAiAdapter` consumers can supply the equivalent `prepareHeaders` callback.
 
+The sibling `llm-pi-ai/discovery-headers` waterfall covers model discovery — the configuration-time `GET /models` probe — with the same listener contract. It runs on the wire path after the named route's deployment headers and resolved credential, and before Harness attribution, so a contributor can authenticate an endpoint that requires a request-time header (a rotating token, a signed request id) that the inference hook already supplies for model calls. A contributor's `LlmError` keeps its code; every other throw settles as `DISCOVERY_FAILED`, and a throw during preparation sends nothing.
+
 ### Source map
 
 | File | Role |

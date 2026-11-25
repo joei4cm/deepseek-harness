@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime, { userAgent } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { LlmError, userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { discoverModels } from '../src/discovery.ts'
@@ -471,6 +471,82 @@ describe('draft-provider model discovery', () => {
     await expect(ctx.llm.discoverModels('llm-pi-ai', {
       baseURL: 'http://127.0.0.1:9/v1',
     }, aborted)).rejects.toMatchObject({ code: 'ABORTED' })
+  })
+
+  it('runs the discovery header hook after the route headers and credential and before attribution', async () => {
+    const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'm' }] }) })
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    process.env['ACME_DISCOVERY_KEY'] = 'stored-key'
+    touchedEnv.push('ACME_DISCOVERY_KEY')
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'acme-gateway': {
+          apiKeyEnv: 'ACME_DISCOVERY_KEY',
+          api: 'openai-completions',
+          baseURL: server.url,
+          headers: { 'X-Company-Code': 'private-tenant' },
+          models: [{ id: 'acme-large' }],
+        },
+      },
+    })
+    const seen: { context: unknown; company: string | null; authorization: string | null; userAgent: string | null }[] = []
+    ctx.on('llm-pi-ai/discovery-headers', (request, headers, next) => {
+      seen.push({
+        context: request,
+        company: headers.get('x-company-code'),
+        authorization: headers.get('authorization'),
+        userAgent: headers.get('user-agent'),
+      })
+      headers.set('x-discovery-signature', 'signed-at-request-time')
+      headers.set('user-agent', 'attribution-blocked')
+      return next()
+    })
+
+    await ctx.llm.discoverModels('llm-pi-ai', { provider: 'acme-gateway', baseURL: server.url })
+    // A draft without a provider still reaches the hook for the interrogation it makes.
+    await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url })
+
+    expect(seen.map(entry => entry.context)).toEqual([
+      { provider: 'acme-gateway', baseURL: server.url, api: 'openai-completions' },
+      { baseURL: server.url, api: 'openai-completions' },
+    ])
+    // Deployment headers and the resolved credential are already applied; attribution is not yet.
+    expect(seen[0]?.company).toBe('private-tenant')
+    expect(seen[0]?.authorization).toBe('Bearer stored-key')
+    expect(seen[0]?.userAgent).toBeNull()
+    expect(server.headers.map(headers => headers['x-discovery-signature']))
+      .toEqual(['signed-at-request-time', 'signed-at-request-time'])
+    expect(server.headers.map(headers => headers['user-agent'])).toEqual([userAgent(), userAgent()])
+  })
+
+  it('keeps a contributor LlmError code and stills the probe, folding other throws into DISCOVERY_FAILED', async () => {
+    const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'm' }] }) })
+    const ctx = await harness()
+    ctx.on('llm-pi-ai/discovery-headers', (_request, _headers, next) => next())
+
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url })).resolves.toEqual([{ id: 'm', name: 'm' }])
+
+    const coded = ctx.on('llm-pi-ai/discovery-headers', () => {
+      throw new LlmError('discovery signed-token rotation refused', 'REQUEST_HEADERS')
+    })
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url }))
+      .rejects.toMatchObject({ code: 'REQUEST_HEADERS' })
+    coded()
+    const unhandled = ctx.on('llm-pi-ai/discovery-headers', () => {
+      throw new Error('signed-token fetch rejected')
+    })
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url }))
+      .rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
+    // A throw during preparation sends nothing.
+    expect(server.paths).toHaveLength(1)
+    unhandled()
+    ctx.on('llm-pi-ai/discovery-headers', () => {
+      throw 'a non-Error rejection'
+    })
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url }))
+      .rejects.toThrow(/non-Error value/)
+    expect(server.paths).toHaveLength(1)
   })
 
   it('is offered for the namespace, and refuses one it does not serve', async () => {

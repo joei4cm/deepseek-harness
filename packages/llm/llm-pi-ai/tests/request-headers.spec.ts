@@ -4,6 +4,7 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { userAgent } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-title-llm'
 import * as PiAi from '../src/index.ts'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
@@ -64,10 +65,10 @@ it('composes request-local headers, enforces attribution, and removes disposed l
     headers.set('x-second-listener', 'yes')
     return next()
   })
-  await assemble(ctx, { model: 'deepseek-flash', messages: [], sessionId: brandString<SessionId>('one') })
+  await assemble(ctx, { model: 'deepseek-flash', messages: [], sessionId: brandString<SessionId>('one'), purpose: 'session-title' })
   await assemble(ctx, { model: 'deepseek-flash', messages: [] })
   expect(seen).toEqual([
-    { provider: 'deepseek', model: 'deepseek-flash', baseURL: server.url, sessionId: 'one' },
+    { provider: 'deepseek', model: 'deepseek-flash', baseURL: server.url, sessionId: 'one', purpose: 'session-title' },
     { provider: 'deepseek', model: 'deepseek-flash', baseURL: server.url },
   ])
   expect(server.headers[0]).toMatchObject({
