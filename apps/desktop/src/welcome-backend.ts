@@ -2,6 +2,7 @@ import type { ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/typ
 /** Native welcome operations using the shared Web authentication and RPC APIs. */
 
 import { randomUUID } from 'node:crypto'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { desktopAccountBackend, type DesktopAccountBackend } from './account-backend.ts'
 
 /** Metadata needed before the native entry or workspace becomes visible. */
@@ -68,9 +69,46 @@ export function connectDesktopWelcome(
     }
     return envelope.result.value
   }
-  const account = desktopAccountBackend(origin, invoke, cookie)
+  /**
+   * Read-only RPCs a transport reset may safely replay once. Every other call
+   * stays single-attempt: `credentials/set` and the sign-in/cancel/sign-out
+   * transitions must never fire twice against an unknown outcome, and
+   * `productAnalytics/report` is fire-and-forget anyway.
+   */
+  const IDEMPOTENT_METHODS = new Set([
+    'account/getState',
+    'credentials/describe',
+    'llm/listConfigurableProviders',
+    'productAnalytics/enabled',
+    'settings/describe',
+  ])
+  const TRANSIENT_RETRY_DELAY_MS = 250
+  /**
+   * Retry a read-only request once when the transport rejects with a TypeError
+   * (undici surfaces a loopback reset as `fetch failed`); HTTP outcomes are not
+   * retried. Chromium `net.fetch` retried this class automatically before the
+   * client moved to Node fetch. Caller deadlines still bind the second attempt.
+   * @param request - namespace, method, and args identifying an idempotent RPC.
+   * @param signal - optional caller deadline applied to each attempt and the wait.
+   * @returns the validated RPC result.
+   */
+  const invokeRead = async (
+    request: { namespace: string; method: string; args: Record<string, unknown> },
+    signal?: AbortSignal,
+  ): Promise<unknown> => {
+    try {
+      return await invoke(request, signal)
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error
+      const method = `${request.namespace}/${request.method}`
+      if (!IDEMPOTENT_METHODS.has(method)) throw error
+      await sleep(TRANSIENT_RETRY_DELAY_MS, undefined, { ...(signal === undefined ? {} : { signal }) })
+      return await invoke(request, signal)
+    }
+  }
+  const account = desktopAccountBackend(origin, invokeRead, cookie)
   const settingsAndReference = async () => {
-    const settings = await invoke({ namespace: 'settings', method: 'describe', args: {} })
+    const settings = await invokeRead({ namespace: 'settings', method: 'describe', args: {} })
     if (!record(settings) || !Array.isArray(settings.namespaces)) throw new Error('desktop welcome: missing settings namespaces')
     const official: unknown = settings.namespaces.find((item: unknown) => record(item) && item.ns === 'llm-deepseek')
     if (official === undefined) return { settings: { namespaces: settings.namespaces }, ref: undefined }
@@ -97,7 +135,7 @@ export function connectDesktopWelcome(
   }
   const read = async (): Promise<WelcomeState> => {
     const { settings, ref } = await settingsAndReference()
-    const providers = await invoke({ namespace: 'llm', method: 'listConfigurableProviders', args: {} })
+    const providers = await invokeRead({ namespace: 'llm', method: 'listConfigurableProviders', args: {} })
     if (!Array.isArray(providers)) throw new Error('desktop welcome: invalid provider directory')
     const namespaces = settings.namespaces
     const refs = providers.flatMap((provider: unknown) => {
@@ -116,7 +154,7 @@ export function connectDesktopWelcome(
     const states: Record<string, unknown> = {}
     // credentials.describe accepts at most 64 references per request.
     for (let offset = 0; offset < unique.length; offset += 64) {
-      const batch = await invoke({ namespace: 'credentials', method: 'describe', args: { refs: unique.slice(offset, offset + 64) } })
+      const batch = await invokeRead({ namespace: 'credentials', method: 'describe', args: { refs: unique.slice(offset, offset + 64) } })
       if (!record(batch)) throw new Error('desktop welcome: invalid credential metadata')
       Object.assign(states, batch)
     }
@@ -133,13 +171,13 @@ export function connectDesktopWelcome(
     account,
     read,
     async analyticsEnabled() {
-      const enabled = await invoke({ namespace: 'productAnalytics', method: 'enabled', args: {} }, AbortSignal.timeout(1000))
+      const enabled = await invokeRead({ namespace: 'productAnalytics', method: 'enabled', args: {} }, AbortSignal.timeout(1000))
       if (typeof enabled !== 'boolean') throw new Error('desktop analytics: invalid collection policy')
       return enabled
     },
     async report(event) { await invoke({ namespace: 'productAnalytics', method: 'report', args: { event } }, AbortSignal.timeout(1000)) },
     async readLocalePreference() {
-      const settings = await invoke({ namespace: 'settings', method: 'describe', args: {} })
+      const settings = await invokeRead({ namespace: 'settings', method: 'describe', args: {} })
       if (!record(settings) || !Array.isArray(settings.namespaces)) throw new Error('desktop welcome: missing settings namespaces')
       return localePreference(settings.namespaces)
     },
