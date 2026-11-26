@@ -78,11 +78,22 @@ const pressureSchema: z.ZodType<ContextPressureProjection> = z.object({
 const pressureFrom = (usage: TokenUsage): number =>
   usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
 
+/**
+ * Whether a durable usage report carries a real token count. An adapter's
+ * error path can emit its untouched all-zero skeleton, which reports nothing
+ * and must not shadow the last real sample; partial counts still count.
+ */
+const isUsageSample = (usage: TokenUsage): boolean =>
+  pressureFrom(usage) > 0 || usage.outputTokens > 0
+
 /** The usage one durable Assistant settlement reports for its attempt, if any. */
 function usageOf(event: SessionEvent): TokenUsage | undefined {
-  if (event.type === 'assistant/message' && event.data.usage !== undefined) return event.data.usage
-  if (event.type !== 'assistant/message' && event.type !== 'assistant/attempt') return undefined
-  return lastAssistantStreamChunk(event.data.stream, 'usage')?.usage
+  const usage = event.type === 'assistant/message' && event.data.usage !== undefined
+    ? event.data.usage
+    : event.type !== 'assistant/message' && event.type !== 'assistant/attempt'
+      ? undefined
+      : lastAssistantStreamChunk(event.data.stream, 'usage')?.usage
+  return usage !== undefined && isUsageSample(usage) ? usage : undefined
 }
 
 /** The context-pressure state schema and source of its inferred type. */
@@ -153,8 +164,10 @@ export const tokenUsageProjectionDefinition = {
  * observation (see {@link ContextPressureProjection}).
  *
  * `pressureTokens` is prompt-side only, so it holds still while a turn streams
- * and steps forward once the next request reports its usage. Because nothing
- * but a request reports usage, it also cannot see a compaction: the fold
+ * and steps forward once the next request reports its usage. A settlement
+ * carrying only a zero-value skeleton reports no usage, so it touches neither
+ * the sample nor the sample point. Because nothing but a request reports
+ * usage, it also cannot see a compaction: the fold
  * therefore carries a running surface total alongside it and publishes
  * `projectedTokens` — the sample plus the surface's signed movement since it
  * was taken — so occupancy answers for the next request rather than the last

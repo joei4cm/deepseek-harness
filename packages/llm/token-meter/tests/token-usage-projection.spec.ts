@@ -495,6 +495,43 @@ describe('contextPressure session projection', () => {
     expect(compacted.projectedTokens).toBeLessThan(beforeCompaction!)
   })
 
+  it('keeps the last real sample when a failed settlement carries a zero-usage skeleton', async () => {
+    const { ctx, session } = await harness()
+    recordContext(session, 'large', 128_000)
+    appendUser(session, 'a first question worth a few tokens')
+    startStep(session, 1, 1)
+    appendAssistant(session, 'an answer of some length', { inputTokens: 900, outputTokens: 20 }, 1, 1)
+    session.append('step/end', { turn: 1, step: 1 })
+    const settled = pressure(ctx, session)
+    expect(settled.pressureTokens).toBe(900)
+
+    // A request that fails before any token flowed still settles: pi-ai's error
+    // path emits its untouched all-zero usage skeleton inside the attempt.
+    appendUser(session, 'another question that grows the surface')
+    startStep(session, 2, 1)
+    session.append('assistant/attempt', {
+      turn: 2,
+      step: 1,
+      stream: [
+        { type: 'chunk', time: 0, chunk: { type: 'usage', usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } } },
+        { type: 'chunk', time: 1, chunk: { type: 'finish', reason: { kind: 'error', failure: { code: 'AUTH', message: 'unauthorized', status: 401 } } } },
+      ],
+    })
+    session.append('step/end', { turn: 2, step: 1 })
+    session.append('turn/end', { turn: 2, reason: { kind: 'error', error: { code: 'AUTH', message: 'unauthorized', status: 401 } } })
+
+    const failed = pressure(ctx, session)
+    expect(failed.pressureTokens).toBe(900)
+    // The zero skeleton never sampled, so the surface growth since the last
+    // real request keeps feeding the correction term instead of canceling to 0.
+    expect(failed.projectedTokens).toBeGreaterThan(900)
+
+    // A settlement reporting partial usage still replaces the sample.
+    startStep(session, 3, 1)
+    usageChunk(session, { inputTokens: 0, outputTokens: 6 }, 3, 1)
+    expect(pressure(ctx, session).pressureTokens).toBe(0)
+  })
+
   it.each(['start', 'end'] as const)('rejects a shadow claim with a mismatched %s endpoint', async (endpoint) => {
     const { ctx, session } = await harness()
     try {
