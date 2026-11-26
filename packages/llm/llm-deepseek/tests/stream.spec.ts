@@ -90,6 +90,34 @@ describe('Messages stream', () => {
     await expect(chunks(translate(events([start, ...end()]), MODEL))).rejects.toMatchObject({ code: 'EMPTY_RESPONSE' })
     await expect(chunks(translate(events(textEvents.slice(0, -1)), MODEL))).rejects.toMatchObject({ code: 'STREAM_CLOSED' })
   })
+
+  it('classifies a reasoning-only stop as an EMPTY_RESPONSE error', async () => {
+    await expect(chunks(translate(events([start,
+      { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: 'mull' } },
+      { type: 'content_block_stop', index: 0 }, ...end()]), MODEL))).rejects.toMatchObject({ code: 'EMPTY_RESPONSE' })
+  })
+
+  it('classifies a whitespace-only text stop as an EMPTY_RESPONSE error', async () => {
+    await expect(chunks(translate(events([start,
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '  ' } },
+      { type: 'content_block_stop', index: 0 }, ...end()]), MODEL))).rejects.toMatchObject({ code: 'EMPTY_RESPONSE' })
+  })
+
+  it('keeps a stop with reasoning and text successful', async () => {
+    const result = await assemble(translate(events([start,
+      { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: 'why' } },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'content_block_start', index: 1, content_block: { type: 'text', text: 'answer' } },
+      { type: 'content_block_stop', index: 1 }, ...end()]), MODEL))
+    expect(result.message.content).toEqual([{ type: 'reasoning', text: 'why' }, { type: 'text', text: 'answer' }])
+  })
+
+  it('keeps a reasoning-only truncated stream successful', async () => {
+    const result = await assemble(translate(events([start,
+      { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: 'cut' } },
+      { type: 'content_block_stop', index: 0 }, ...end('max_tokens')]), MODEL))
+    expect(result.message.content).toEqual([{ type: 'reasoning', text: 'cut' }])
+  })
 })
 
 describe('SSE framing and provider failures', () => {

@@ -146,7 +146,13 @@ export async function* translate(events: AsyncIterable<Record<string, unknown>>,
       if (event.usage !== undefined) updateUsage(usage, event.usage)
     } else {
       if (reason === undefined || [...blocks.values()].some(block => !block.closed)) return malformed('message_stop without settled blocks and stop reason')
-      if (blocks.size === 0 && reason.kind === 'stop') throw new LlmError('DeepSeek Messages returned no content', 'EMPTY_RESPONSE')
+      // A terminal stop without visible content — reasoning-only or
+      // whitespace — is a degenerate completion, not a successful reply; the
+      // default retry policy treats EMPTY_RESPONSE as retryable.
+      if (reason.kind === 'stop'
+        && ![...blocks.values()].some(block => (block.content.type === 'text' && block.content.text.trim().length > 0) || block.content.type === 'tool-call')) {
+        throw new LlmError('DeepSeek Messages returned no content', 'EMPTY_RESPONSE')
+      }
       // Truncated tool JSON is retained in the stream, then pruned by the shared assembler.
       if (reason.kind !== 'max-tokens') {
         for (const { content } of blocks.values()) {
