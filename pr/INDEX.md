@@ -33,6 +33,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `27-desktop-welcome-invoke-retry.md` | `fix/desktop-welcome-invoke-retry` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14308` |
 | `28-inspector-late-setstate-after-close.md` | `fix/inspector-late-setstate-after-close` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14355` |
 | `29-config-editor-insert-row-edit.md` | `fix/config-editor-insert-row-edit` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14368` |
+| `30-macos-local-network-usage-description.md` | `fix/macos-local-network-usage-description` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14378` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
