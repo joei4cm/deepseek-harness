@@ -13,7 +13,7 @@ import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import Settings from '../src/index.ts'
 
 export async function configurationFixture(
-  options: { schema?: z; apply?: (ctx: Context, config: unknown) => void; hmr?: boolean; overlay?: string } = {},
+  options: { schema?: z; apply?: (ctx: Context, config: unknown) => void; hmr?: boolean; overlay?: string; patch?: string } = {},
 ) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'settings-config-')))
   const dir = join(home, 'profiles', 'test')
@@ -31,6 +31,7 @@ export async function configurationFixture(
     { id: 'second', name: 'cordis:probe', config: { ordinary: 'second' } },
   ] }]))
   writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+  if (options.patch !== undefined) writeFileSync(join(dir, 'cordis.patch.yml'), options.patch)
   const overlayPath = join(home, 'overlay.patch.yml')
   if (options.overlay !== undefined) writeFileSync(overlayPath, options.overlay)
   const profile: ProfileContext = {

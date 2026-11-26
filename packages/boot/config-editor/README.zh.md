@@ -38,9 +38,9 @@ kind: "package-reference"
 <details>
 <summary>实现内部细节——点击展开</summary>
 
-[编辑器](src/index.ts) 在派生候选配置前应用外部更改，与其他 profile 操作共同锁定 profile manifest，并原子替换配置覆盖项。它保留替换值以外的 YAML 注释和 `!!js` 表达式。应用失败时恢复之前的文档并重新加载之前的 patch。
+[编辑器](src/index.ts) 在派生候选配置前应用外部更改，与其他 profile 操作共同锁定 profile manifest，并原子替换 profile 文件中该插件的配置。写入落在已经承载该配置的行上，无论是顶层行还是 `insert:` 列表中的行，因此被编辑的插件在文件中只保留一处定义。它保留替换值以外的 YAML 注释和 `!!js` 表达式。应用失败时恢复之前的文档并重新加载之前的 patch。
 
-读取配置时，没有 profile config 覆盖项的条目共用一次组合结果。有覆盖项的条目分别组合，仅移除自身的覆盖项；profile 插入的条目和其他条目的覆盖项仍然生效。返回的配置为独立副本，组合结果不跨读取缓存。
+读取配置时，在 profile 文件中没有自有配置的条目共用一次组合结果。有自有配置的条目分别组合，仅移除自身的配置；profile 插入的条目和其他条目的配置仍然生效。`insert:` 列表中的配置算作该条目的自有配置。返回的配置为独立副本，组合结果不跨读取缓存。
 
 </details>
 
@@ -67,6 +67,7 @@ kind: "package-reference"
 - 编辑写入当前 profile patch。Home patch 和命令行 overlay 参与优先级解析，但不作为写入目标。
 - 完整配置覆盖保留普通字段，但会在 profile 层固定其当前原始值。
 - 仅可编辑 profile 根 Include 拥有且可唯一定位的条目。
+- 只有 `insert:` 列表中直接包含的行会被就地改写；组内的行仍使用顶层覆盖项形式。
 
 <a id="dev-note"></a>
 ### 开发备注

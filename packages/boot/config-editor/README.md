@@ -38,9 +38,9 @@ Use [settings](../../settings/settings/README.md) for forms restricted to live f
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The [editor](src/index.ts) reconciles external changes before deriving a candidate, locks the profile manifest alongside other profile operations, and atomically replaces its config override. It preserves YAML comments and `!!js` expressions outside replaced values. A failed reconciliation restores the prior document and reloads the prior patches.
+The [editor](src/index.ts) reconciles external changes before deriving a candidate, locks the profile manifest alongside other profile operations, and atomically replaces the plugin’s config in the profile file. The write lands on the row that already carries that config, whether a top-level row or a row inside an `insert:` list, so an edited plugin keeps one definition in the file. It preserves YAML comments and `!!js` expressions outside replaced values. A failed reconciliation restores the prior document and reloads the prior patches.
 
-Configuration reads share one composition for entries without profile config overrides. Overridden entries are composed separately with only their own override removed; profile inserts and other entries' overrides remain effective. Returned configs are detached, and compositions are not cached between reads.
+Configuration reads share one composition for entries without a config of their own in the profile file. Entries that carry one are composed separately with only their own config removed; profile inserts and other entries’ configs remain effective. A config inside an `insert:` list counts as the entry’s own config. Returned configs are detached, and compositions are not cached between reads.
 
 </details>
 
@@ -67,6 +67,7 @@ Consumers that change request prefixes determine cache effects.
 - Edits target the active profile patch. Home patches and command-line overlays are read for precedence but are not write targets.
 - A complete config override preserves ordinary fields but pins their current raw values at the profile layer.
 - Only uniquely addressed entries owned by the profile’s root Include are editable.
+- Only rows directly inside an `insert:` list are rewritten in place; a row nested in a group keeps the top-level override form.
 
 <a id="dev-note"></a>
 ### Dev Note
