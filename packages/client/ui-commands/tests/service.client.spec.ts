@@ -216,14 +216,19 @@ describe('registration', () => {
     expect(registered.size).toBe(0)
   })
 
-  it('the warm hook prewarms the session key: one pull per session, no duplicate over pending', async () => {
-    const { source, listCalls } = await bench()
+  it('the warm hook prewarms only a running session: cold keys stay untouched for first use', async () => {
+    const { source, listCalls, sessions, mint } = await bench()
+    // A catalog pull resumes a prepared Session's Agent: warm skips sessions
+    // whose Agent is not running, and candidates() pulls the catalog on use.
     source.warm!(proj('s1'))
-    await vi.waitFor(() => { expect(listCalls).toEqual([{ sessionId: sid('s1') }]) })
-    source.warm!(proj('s2'))
-    await vi.waitFor(() => { expect(listCalls).toEqual([{ sessionId: sid('s1') }, { sessionId: sid('s2') }]) })
-    source.warm!(proj('s1')) // s1 already pending → no duplicate pull
-    expect(listCalls).toHaveLength(2)
+    source.warm!(proj('ghost')) // unretained binding → skip
+    expect(listCalls).toEqual([])
+    await sessions.add({ id: 'live', snapshot: { running: true } })
+    mint('live')
+    source.warm!(proj('live'))
+    await vi.waitFor(() => { expect(listCalls).toEqual([{ sessionId: sid('live') }]) })
+    source.warm!(proj('live')) // already pending → no duplicate pull
+    expect(listCalls).toHaveLength(1)
   })
 })
 

@@ -122,7 +122,13 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
       matchSpace: (session, token) => this.matchSpace(session, token),
       matchClaim: (session, token, signal) => this.matchClaim(session, token, signal),
       matchEnter: (session, line, signal, envelope) => this.matchEnter(session, line, signal, envelope),
-      warm: (session) => { this.directory.warm(session.sessionId) },
+      warm: (session) => {
+        // A catalog pull resumes a prepared Session's Agent, so prewarm only
+        // while that Agent is already running; browsing a cold Session keeps
+        // its menu pull on first use through ensureReady.
+        const binding = this.sessions().binding(session.sessionId)
+        if (binding?.session.getSnapshot().running === true) this.directory.warm(session.sessionId)
+      },
     }), 'command: slash source')
     ctx.remote.$on('commands/change', () => { this.directory.invalidateAll() })
     // A preset switch changes which commands one session's agent resolves and

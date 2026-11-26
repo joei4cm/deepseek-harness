@@ -210,9 +210,11 @@ export class SessionEventStream extends RemoteJournalStream<
     SessionHistoryRecord, number, SessionJournalPage, SessionAssistantStreamFrame
   >> {
     let assistantRevision: number | undefined
+    // Passive read: omission leaves a prepared Session un-promoted. Opening or
+    // browsing a Session activates nothing; engagement RPCs (prompt, queue,
+    // commands) resolve the Agent on their own.
     for await (const frame of this.remote.session.follow({
       address: this.address,
-      activate: true,
       assistantStream: true,
       ...this.repairRequest(request),
     }, signal)) {
