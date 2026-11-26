@@ -41,6 +41,8 @@ function assistant(message: Message, model: string, onReplayDegrade?: (reason: s
 /** Serialize one complete request using already prepared image bytes.
  * User and tool-result content omits reasoning and tool-call blocks.
  * Empty assistant text blocks and empty user/assistant messages are skipped;
+ * assistant messages left without a text or tool-use block (for example a
+ * cancelled reasoning-only prefix) are omitted entirely, signed or not;
  * empty tool results retain their call ids.
  * Developer messages, already projected for this route by `LlmRuntime`, become
  * system-role updates after the preceding user turn, with tool changes as
@@ -121,6 +123,10 @@ export function serialize(
         ? [{ type: 'tool_result', tool_use_id: message.toolCallId, content: input(message.content), ...message.isError === undefined ? {} : { is_error: message.isError } }]
         : message.content.flatMap((block): WireBlock[] => input([block]))
     if ((message.role === 'user' || message.role === 'assistant') && content.length === 0) continue
+    // A Messages turn without text or tool use — the thinking-only shape a
+    // cancelled reasoning-only prefix leaves — would be rejected whole, so the
+    // request omits it; the durable message and its transcript stay unchanged.
+    if (message.role === 'assistant' && !content.some(block => block.type === 'text' || block.type === 'tool_use')) continue
     if (message.role === 'assistant') flushSystemUpdates()
     const wireRole = message.role === 'tool' ? 'user' : message.role
     const previous = messages.at(-1)

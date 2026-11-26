@@ -45,6 +45,34 @@ describe('Messages request conversion', () => {
     expect(body([assistant([{ type: 'text', text: ' ' }])]).messages[0]?.content).toEqual([{ type: 'text', text: ' ' }])
   })
 
+  it('omits an assistant message with only thinking blocks and merges the adjacent user turns', () => {
+    const request = body([user(), assistant([{ type: 'reasoning', text: 'interrupted prefix' }]), user('follow-up')])
+    expect(request.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }, { type: 'text', text: 'follow-up' }] },
+    ])
+  })
+
+  it('omits a signed reasoning-only assistant message while keeping the durable content', () => {
+    const content: ContentBlock[] = [{ type: 'reasoning', text: 'completed reasoning' }]
+    const message = createAssistantMessage({ content, source: {
+      provider: 'deepseek-official', model: MODEL,
+      replayState: replayState(MODEL, [{ type: 'reasoning', signature: 'signed' }]),
+    } })
+    const request = body([user(), message, assistant([{ type: 'text', text: 'done' }])])
+    expect(request.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'done' }] },
+    ])
+    expect(message.content).toEqual(content)
+  })
+
+  it('keeps an assistant message that pairs thinking with text or tool use', () => {
+    expect(body([user(), assistant([{ type: 'reasoning', text: 'why' }, { type: 'text', text: 'answer' }])]).messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+      { role: 'assistant', content: [{ type: 'thinking', thinking: 'why' }, { type: 'text', text: 'answer' }] },
+    ])
+  })
+
   it('does not flush a system update at an omitted empty assistant message', () => {
     const request = nativeBody([
       user(), createSystemMessage('updated'), assistant([{ type: 'text', text: '' }]),
@@ -374,7 +402,8 @@ describe('Messages request conversion', () => {
     const source = { provider: 'deepseek-official', model: MODEL, replayState: replayState(MODEL, [{ type: 'reasoning', signature: 'signed' }, { type: 'text' }]) }
     const message = createAssistantMessage({ content, source })
     expect(body([user(), message, user()]).messages[1]?.content).toEqual([{ type: 'thinking', thinking: '', signature: 'signed' }, { type: 'text', text: 'answer' }])
-    expect(body([assistant([{ type: 'reasoning', text: 'foreign thought' }])]).messages[0]?.content).toEqual([{ type: 'thinking', thinking: 'foreign thought' }])
+    expect(body([assistant([{ type: 'reasoning', text: 'foreign thought' }, { type: 'text', text: 'kept' }])]).messages[0]?.content)
+      .toEqual([{ type: 'thinking', thinking: 'foreign thought' }, { type: 'text', text: 'kept' }])
     expect(readReplay(message, 'different-model')).toBeUndefined()
     expect(readReplay(user(), MODEL)).toBeUndefined()
   })
@@ -388,15 +417,18 @@ describe('Messages request conversion', () => {
     { response: { kind: 'deepseek-messages', version: 1, model: 'wrong' }, blocks: [] },
     { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [] },
     { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: null },
-    { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [null] },
-    { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [{ type: 'tool-call' }] },
-    { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [{ type: 'reasoning', signature: 3 }] },
+    { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [null, { type: 'text' }] },
+    { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [{ type: 'tool-call' }, { type: 'text' }] },
+    { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [{ type: 'reasoning', signature: 3 }, { type: 'text' }] },
   ].map(state => ({ state })))('degrades unusable replay state with a diagnostic %#', ({ state }) => {
-    const message = createAssistantMessage({ content: [{ type: 'reasoning', text: 'think' }], source: { provider: 'deepseek-official', model: MODEL, replayState: state } })
+    const message = createAssistantMessage({
+      content: [{ type: 'reasoning', text: 'think' }, { type: 'text', text: 'kept' }],
+      source: { provider: 'deepseek-official', model: MODEL, replayState: state },
+    })
     const onDegrade = vi.fn()
     expect(readReplay(message, MODEL, onDegrade)).toBeUndefined()
     expect(onDegrade).toHaveBeenCalledExactlyOnceWith(expect.any(String))
-    expect(body([message]).messages[0]?.content).toEqual([{ type: 'thinking', thinking: 'think' }])
+    expect(body([message]).messages[0]?.content).toEqual([{ type: 'thinking', thinking: 'think' }, { type: 'text', text: 'kept' }])
   })
 
   it.each([MODEL, 'different-model'])('keeps durable content when replay degrades for %s', async (model) => {
