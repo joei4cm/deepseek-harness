@@ -346,12 +346,38 @@ describe('canOpenNativePath', () => {
     const linux = { platform: 'linux' as const, osRelease: '6.8.0-generic' }
     // Headless is the case the capability exists for: `xdg-open` would spawn
     // into nothing, so a surface should show the path as text instead.
-    expect(canOpenNativePath({ ...linux, env: {} })).toBe(false)
+    expect(canOpenNativePath({ ...linux, env: {}, readDir: () => [] })).toBe(false)
     expect(canOpenNativePath({ ...linux, env: { DISPLAY: ':0' } })).toBe(true)
     expect(canOpenNativePath({ ...linux, env: { WAYLAND_DISPLAY: 'wayland-0' } })).toBe(true)
     expect(canOpenNativePath({
       platform: 'linux', osRelease: '5.15.153.1-microsoft-standard-WSL2', env: {},
     })).toBe(true)
+  })
+
+  it('counts a live Wayland compositor socket in the runtime directory as a desktop', () => {
+    const linux = { platform: 'linux' as const, osRelease: '6.8.0-generic' }
+    // A systemd user service inherits neither display variable but does inherit
+    // $XDG_RUNTIME_DIR, where the live session publishes its compositor socket.
+    expect(canOpenNativePath({
+      ...linux, env: { XDG_RUNTIME_DIR: '/run/user/1000' },
+      readDir: path => path === '/run/user/1000' ? ['wayland-0', 'wayland-1.lock', 'systemd'] : [],
+    })).toBe(true)
+    // The lock companion and unrelated entries announce no compositor.
+    expect(canOpenNativePath({
+      ...linux, env: { XDG_RUNTIME_DIR: '/run/user/1000' },
+      readDir: () => ['wayland-1.lock', 'systemd', 'dbus-1'],
+    })).toBe(false)
+    expect(canOpenNativePath({
+      ...linux, env: { XDG_RUNTIME_DIR: '/run/user/1000' }, readDir: () => [],
+    })).toBe(false)
+    expect(canOpenNativePath({ ...linux, env: { XDG_RUNTIME_DIR: '' }, readDir: () => ['wayland-0'] })).toBe(false)
+  })
+
+  it('answers no when the runtime directory cannot be listed', () => {
+    expect(canOpenNativePath({
+      platform: 'linux' as const, osRelease: '6.8.0-generic', env: { XDG_RUNTIME_DIR: '/run/user/1000' },
+      readDir: () => { throw new Error('EACCES') },
+    })).toBe(false)
   })
 
   it('answers no on a platform the opener does not support', () => {
@@ -361,10 +387,12 @@ describe('canOpenNativePath', () => {
   it('samples the ambient environment when no override is supplied', () => {
     const env = process.env
     const marked = (value: string | undefined): boolean => value !== undefined && value !== ''
+    // The socket probe stays neutralized so the parity claim covers the
+    // ambient environment markers alone; the probe has its own tests above.
     const expected = marked(env.WSL_DISTRO_NAME) || marked(env.WSL_INTEROP)
       || marked(env.DISPLAY) || marked(env.WAYLAND_DISPLAY)
 
-    expect(canOpenNativePath({ platform: 'linux', osRelease: '6.8.0-generic' })).toBe(expected)
+    expect(canOpenNativePath({ platform: 'linux', osRelease: '6.8.0-generic', readDir: () => [] })).toBe(expected)
   })
 
   it('samples the ambient platform when none is named', () => {

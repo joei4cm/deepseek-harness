@@ -12,6 +12,7 @@
  * @module @deepseek-ai/dsh-native-command/path-opener
  */
 
+import { readdirSync } from 'node:fs'
 import { release as osRelease } from 'node:os'
 import { dirname, extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -28,6 +29,8 @@ export interface PathOpenerInternals {
   /** Environment used for WSL markers and the desktop Linux browser convention. */
   env?: NodeJS.ProcessEnv
   run?: PathOpenerRunner
+  /** Directory listing override for the runtime-directory desktop probe; defaults to a plain readdir. */
+  readDir?: (path: string) => readonly string[]
 }
 
 /** Documents a browser renders, as opposed to ones an editor merely edits. */
@@ -95,6 +98,26 @@ function isWsl(internals: PathOpenerInternals): boolean {
   const env = internals.env ?? process.env
   if (present(env.WSL_DISTRO_NAME) || present(env.WSL_INTEROP)) return true
   return (internals.osRelease ?? osRelease()).toLowerCase().includes('microsoft')
+}
+
+/** Socket file name a live Wayland compositor publishes in the user runtime directory. */
+const WAYLAND_SOCKET = /^wayland-\d+$/
+
+/**
+ * Whether the user runtime directory carries a live Wayland compositor socket.
+ * A service inherits neither display variable but does inherit
+ * `$XDG_RUNTIME_DIR`, where the desktop session publishes its socket — the same
+ * discovery `xdg-open` performs when the variables are absent.
+ */
+function hasWaylandSocket(env: NodeJS.ProcessEnv, readDir: (path: string) => readonly string[]): boolean {
+  const runtimeDir = env.XDG_RUNTIME_DIR
+  if (runtimeDir === undefined || runtimeDir === '') return false
+  try {
+    return readDir(runtimeDir).some(name => WAYLAND_SOCKET.test(name))
+  } catch (_runtimeDirUnreadable) {
+    // A missing or unreadable runtime directory announces no desktop.
+    return false
+  }
 }
 
 /**
@@ -205,7 +228,8 @@ async function openNativePathWithIntent(
  * Whether {@link openNativePath} plausibly reaches a desktop on this host.
  *
  * macOS and Windows always carry a desktop opener; Linux does when it is WSL
- * (the Windows desktop takes the path) or a display server is announced.
+ * (the Windows desktop takes the path), a display server is announced, or the
+ * user runtime directory carries a live Wayland compositor socket.
  * A headless or containerised Linux host answers false, which is what lets a
  * surface show a path as text instead of offering a button that would spawn
  * `xdg-open` into nothing.
@@ -217,7 +241,10 @@ export function canOpenNativePath(internals: PathOpenerInternals = {}): boolean 
   if (platform === 'darwin' || platform === 'win32') return true
   if (platform !== 'linux') return false
   const env = internals.env ?? process.env
-  return isWsl(internals) || present(env.DISPLAY) || present(env.WAYLAND_DISPLAY)
+  return isWsl(internals)
+    || present(env.DISPLAY)
+    || present(env.WAYLAND_DISPLAY)
+    || hasWaylandSocket(env, internals.readDir ?? (path => readdirSync(path)))
 }
 
 /**
