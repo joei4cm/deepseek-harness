@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/util/values/README.md
 /:
-  en: 6b543e93639271ad
-  zh: 397ce501111fc943
+  en: eda4154cd4c572d7
+  zh: b374efb741f344b5
 /deepseek-ai-dsh-util-values:
   en: d4e5c3dd11f4c1f4
   zh: ac01621284cc2f99
 /deepseek-ai-dsh-util-values/summary:
-  en: 7c7e9304b1266973
-  zh: 68dd911e2a80d7a8
+  en: 97d44706d2b0250e
+  zh: f09554a6dce47193
 /deepseek-ai-dsh-util-values/table-of-contents:
   en: 80b31a934611cb4a
   zh: 05f3f7f9cb2fd881
@@ -26,6 +26,9 @@
 /deepseek-ai-dsh-util-values/use-this-package/publish-compare-or-retain-keyed-values:
   en: 13628af2abe3eea6
   zh: e284bb8d3ebe38ea
+/deepseek-ai-dsh-util-values/use-this-package/send-text-that-carries-no-lone-surrogate:
+  en: b7ca78931568a7c2
+  zh: 60552f06abe6fa6c
 /deepseek-ai-dsh-util-values/use-this-package/close-a-discriminated-union:
   en: f21b7bd8040a72eb
   zh: 19548d3e537c0b5b
@@ -33,8 +36,8 @@
   en: 191b5a3d906e4957
   zh: b9cf264bf8c0674b
 /deepseek-ai-dsh-util-values/understand-the-implementation/source-map:
-  en: 761d4e5f1a53f6a0
-  zh: 00ae8492171028e4
+  en: 99235d77482af2d2
+  zh: 9ecc52999e06c0bf
 /deepseek-ai-dsh-util-values/further-exploration:
   en: 3be59be736dc8e9a
   zh: 4f419cb5db38fd12

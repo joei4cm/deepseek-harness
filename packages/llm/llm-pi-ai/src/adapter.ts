@@ -58,6 +58,7 @@ import type {
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { toWellFormedValue } from '@deepseek-ai/dsh-util-values'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { requestImageTarget, toPiContext } from './context.ts'
 import { resolveImageRequestBudget } from './image-policy.ts'
@@ -455,7 +456,11 @@ export class PiAiAdapter extends LlmAdapter {
         this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason })
       }
       const prefixDigests: PrefixDigests = new Map()
-      const converted = attachments === undefined
+      // The context carries only well-formed text: a lone UTF-16 surrogate in any
+      // string is replaced with U+FFFD, because a provider rejects a request body
+      // whose JSON carries an unpaired surrogate escape. The replacement runs
+      // before the prefix digest, so the digest covers the text that is sent.
+      const converted = toWellFormedValue(attachments === undefined
         ? toPiContext(request, undefined, onReplayDegrade, updates.systemPromptUpdate === 'in-history', prefixDigests)
         : await toPiContext({ ...request, signal: watchdog.signal }, {
           attachments,
@@ -464,7 +469,7 @@ export class PiAiAdapter extends LlmAdapter {
           maxRequestImages: profile.maxRequestImages,
           imageOffloadCountQuantum: profile.imageOffloadCountQuantum,
           requestImagePolicy: resolveImageRequestBudget(model, profile),
-        }, onReplayDegrade, updates.systemPromptUpdate === 'in-history', prefixDigests)
+        }, onReplayDegrade, updates.systemPromptUpdate === 'in-history', prefixDigests))
       const manualThinking = model.reasoning && reasoning !== undefined && reasoning !== 'off'
         && (model as Model<'anthropic-messages'>).compat?.forceAdaptiveThinking !== true
       const { context, digest } = bindThinkingToPrefix(converted, model.api, prefixDigests, manualThinking, (count) => {

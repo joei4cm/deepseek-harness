@@ -1,5 +1,5 @@
 ---
-description: "Lossless JSON validation, detached snapshots, deep freezing, structural equality, and exhaustive-union helpers for runtime packages."
+description: "Lossless JSON validation, detached snapshots, deep freezing, structural equality, well-formed text, and exhaustive-union helpers for runtime packages."
 kind: "package-library"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Callers can validate lossless JSON, read streamed arguments, detach a JSON snapshot, freeze a published value, compare JSON-compatible data, or terminate an unreachable branch without importing a capability package. Each streamed call uses its own `PartialArguments` reader; `PartialArguments.EMPTY` is a shared sealed view with no fields.
+Callers can validate lossless JSON, read streamed arguments, detach a JSON snapshot, freeze a published value, compare JSON-compatible data, make outgoing text well-formed, or terminate an unreachable branch without importing a capability package. Each streamed call uses its own `PartialArguments` reader; `PartialArguments.EMPTY` is a shared sealed view with no fields.
 
 ## Table of Contents
 
@@ -49,6 +49,12 @@ const snapshot = snapshotJsonValue(input) as JsonValue
 
 `WeakMapWithValues<Key, Value>` combines weak object-key lookup with a strongly retained, insertion-ordered `values` set. Each value belongs to one key. The owner must call `delete(key)` or `clear()` at the corresponding lifecycle boundary; the collection does not perform automatic cleanup.
 
+### Send text that carries no lone surrogate
+
+`toWellFormedText(text)` replaces every lone UTF-16 surrogate in one string with U+FFFD and returns the same string when it is already well formed. A lone surrogate encodes no character of its own, and `JSON.stringify` escapes it as an unpaired `\uXXXX` sequence that strict JSON parsers reject, so text that carries one cannot reach a remote endpoint as it stands.
+
+`toWellFormedValue(value)` applies that rule to every string of a value and returns a copy that keeps the value's structure. A value without a lone surrogate is returned unchanged, and a class instance, buffer, or other exotic object is carried over as it stands.
+
 ### Close a discriminated union
 
 Use `assertNever(value, context?)` in the default branch of a closed discriminated union. A newly added variant then fails TypeScript compilation at every exhaustive switch, while a runtime value that escaped its declared type throws with the optional context label.
@@ -67,7 +73,7 @@ The JSON validator keeps one cursor per active container, reads one child at a t
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | JSON value type, validation and snapshot traversal, structural equality, deep freezing, weak-key/strong-value associations, and exhaustive-union failure |
+| [`src/index.ts`](src/index.ts) | JSON value type, validation and snapshot traversal, structural equality, deep freezing, well-formed text, weak-key/strong-value associations, and exhaustive-union failure |
 | [`src/partial-json.ts`](src/partial-json.ts) | Lazy top-level argument scanning and observed-answer change detection |
 
 </details>

@@ -188,6 +188,76 @@ export function deepEqualJson(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * Replace every lone UTF-16 surrogate in one string with U+FFFD.
+ *
+ * A lone surrogate stands for no character of its own. `JSON.stringify` escapes
+ * it as an unpaired `\uXXXX` sequence, which strict JSON parsers reject, so text
+ * that carries one cannot reach a remote endpoint as it stands.
+ * @param text - text that may carry a lone surrogate.
+ * @returns the same text with every lone surrogate replaced.
+ */
+export function toWellFormedText(text: string): string {
+  return text.isWellFormed() ? text : text.toWellFormed()
+}
+
+/** Whether a candidate is an array whose elements are walked as values. */
+function isValueArray(value: unknown): value is unknown[] {
+  return Array.isArray(value)
+}
+
+/** Whether a candidate is a record whose own enumerable string keys are walked as values. */
+function isValueRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && hasPlainObjectPrototype(value)
+}
+
+/** One value with every string below it made well-formed. */
+function wellFormedValue(value: unknown): unknown {
+  if (typeof value === 'string') return toWellFormedText(value)
+  if (isValueArray(value)) {
+    let result: unknown[] | undefined
+    for (let index = 0; index < value.length; index++) {
+      const item = value[index]
+      const next = wellFormedValue(item)
+      if (result !== undefined) {
+        result.push(next)
+        continue
+      }
+      if (next === item) continue
+      result = value.slice(0, index)
+      result.push(next)
+    }
+    return result ?? value
+  }
+  if (!isValueRecord(value)) return value
+  let result: Record<string, unknown> | undefined
+  for (const [key, entry] of Object.entries(value)) {
+    const next = wellFormedValue(entry)
+    if (result !== undefined) {
+      result[key] = next
+      continue
+    }
+    if (next === entry) continue
+    result = { ...value }
+    result[key] = next
+  }
+  return result ?? value
+}
+
+/**
+ * Replace every lone UTF-16 surrogate in the strings of one value.
+ *
+ * The copy keeps the value's structure, and a value that carries no lone
+ * surrogate is returned unchanged. Only strings change, so numbers, booleans,
+ * and null survive, and a class instance, buffer, or other exotic object is
+ * carried over as it stands.
+ * @param value - value whose strings may carry lone surrogates.
+ * @returns a copy of the value whose strings are well-formed.
+ */
+export function toWellFormedValue<T>(value: T): T {
+  return wellFormedValue(value) as T
+}
+
+/**
  * Deep-freeze an object graph in place while leaving live AbortSignal objects mutable.
  * @param value - value to freeze.
  * @returns the same value after every reachable enumerable child is frozen.
