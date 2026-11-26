@@ -32,9 +32,14 @@ export class ClientBridgePublisher implements InspectorStatePublisher {
   }
 
   setState(topic: string, payload: InspectorJsonValue, monotonicMs = performance.now()): void {
-    if (this.closed) throw new Error('inspector: Client source is closed')
+    if (this.closed) return
     this.records.setState(topic, payload, monotonicMs)
     this.flush()
+  }
+
+  /** Whether this publisher stopped accepting publications. */
+  isClosed(): boolean {
+    return this.closed
   }
 
   /**
@@ -76,7 +81,7 @@ export class ClientBridgePublisher implements InspectorStatePublisher {
     if (this.active?.socket === socket) this.active = undefined
   }
 
-  /** Stop delayed writes and reject later publication. */
+  /** Stop delayed writes and drop later publications. */
   close(): void {
     if (this.closed) return
     this.closed = true

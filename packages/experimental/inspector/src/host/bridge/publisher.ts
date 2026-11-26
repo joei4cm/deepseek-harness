@@ -28,9 +28,14 @@ export class HostBridgePublisher implements InspectorStatePublisher {
   }
 
   setState(topic: string, payload: InspectorJsonValue, monotonicMs = performance.now()): void {
-    if (this.closed) throw new Error('inspector: Host source is closed')
+    if (this.closed) return
     this.records.setState(topic, payload, monotonicMs)
     this.scheduleFlush()
+  }
+
+  /** Whether this publisher stopped accepting publications. */
+  isClosed(): boolean {
+    return this.closed
   }
 
   /** Send the retained state as a complete source replacement. */
@@ -62,7 +67,7 @@ export class HostBridgePublisher implements InspectorStatePublisher {
     this.scheduleFlush()
   }
 
-  /** Send at most one final batch, discard later queued observations, and reject publication. */
+  /** Send at most one final batch, discard later queued observations, and drop later publications. */
   close(): void {
     if (this.closed) return
     this.flush()

@@ -5,14 +5,17 @@ import type { InspectorQuery, InspectorQueryRequester, InspectorQueryResultFor }
 
 /** Transport-independent observation publisher. */
 export interface InspectorPublisher {
-  /** Publish one validated observation. */
+  /** Publish one validated observation. A closed publisher drops the publication. */
   publish(topic: string, payload: InspectorJsonValue, monotonicMs?: number): void
 }
 
 /** Publisher that also retains the latest value of stateful observation topics. */
 export interface InspectorStatePublisher extends InspectorPublisher {
+  /** Whether the publisher stopped accepting publications. */
+  isClosed(): boolean
   /**
    * Replace one topic's retained state and publish the replacement.
+   * A closed publisher drops the publication instead of raising a failure.
    * @param topic - Domain-owned state topic.
    * @param payload - Latest JSON state, replayed after source resynchronization.
    * @param monotonicMs - Source-clock timestamp; defaults to `performance.now()`.
@@ -27,6 +30,11 @@ export interface InspectorConnection extends InspectorStatePublisher, InspectorQ
 export abstract class InspectorSourceConnection implements InspectorConnection {
   protected abstract readonly publisher: InspectorStatePublisher
   protected abstract readonly queries: InspectorQueryRequester
+
+  /** Whether this source stopped accepting publications. */
+  isClosed(): boolean {
+    return this.publisher.isClosed()
+  }
 
   /** Publish one JSON observation without waiting on its carrier. */
   publish(topic: string, payload: InspectorJsonValue, monotonicMs = performance.now()): void {

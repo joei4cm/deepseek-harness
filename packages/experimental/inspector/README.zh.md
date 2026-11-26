@@ -115,7 +115,7 @@ ctx.inspector.publish(topic, jsonPayload)
 await ctx.inspector.cordis.getTree()
 ```
 
-发布操作先验证无损 JSON，再调度发送，不等待 Worker。每个 source 的队列都有上限；溢出表现为 sequence gap，绝不延迟被观察的应用操作。`cordis.getTree()` 读取 Worker 最新的 detached semantic 快照，不创建 CDP 会话，也不启用 Runtime、Debugger 或 Sources。
+发布操作先验证无损 JSON，再调度发送，不等待 Worker。每个 source 的队列都有上限；溢出表现为 sequence gap，绝不延迟被观察的应用操作。已关闭的 source 丢弃后续发布，而不抛错。`cordis.getTree()` 读取 Worker 最新的 detached semantic 快照，不创建 CDP 会话，也不启用 Runtime、Debugger 或 Sources。
 
 <a id="cordis-tree-inspection"></a>
 ## Cordis 树检查
@@ -167,7 +167,7 @@ CDP target 通过 `Runtime.evaluate` 提供 Host 和已连接 Client realm 中�
 - **Client 身份仲裁依赖 Web Locks**——缺少该 API 的浏览器仍会通过 `sessionStorage` 保持重连与刷新身份，但无法区分从同一存储状态复制出的两个同时存活 tab。
 - **fetch 拦截范围是 `globalThis.fetch`**——直接调用 Undici API，以及激活前保存的 fetch 引用不会被观察。
 - **body clone 有运行成本**——完整采集会 tee 请求与响应流，直至达到配置上限，可能增加内存与 I/O 压力。保留 body 的上限不包含流 tee 内部的缓冲，包括来源提供的超大 chunk，或为读取较慢的应用分支排队的数据。
-- **不自动重启 Worker**——Worker 意外退出会使当前 Inspector 实例失败；生命周期恢复留待后续改动。
+- **不自动重启 Worker**——Worker 意外退出会使当前 Inspector 实例失败并停止其 Cordis 观察，Host 继续运行；生命周期恢复留待后续改动。
 
 <a id="dev-note"></a>
 ### 开发备注

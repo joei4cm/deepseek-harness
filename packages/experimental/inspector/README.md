@@ -115,7 +115,7 @@ ctx.inspector.publish(topic, jsonPayload)
 await ctx.inspector.cordis.getTree()
 ```
 
-Publishing validates lossless JSON and schedules delivery without waiting for the Worker. Each source has a bounded queue. Overflow is reported as a sequence gap and never delays the observed application operation. `cordis.getTree()` reads the Worker's latest detached semantic snapshot without creating a CDP session or enabling Runtime, Debugger, or Sources.
+Publishing validates lossless JSON and schedules delivery without waiting for the Worker. Each source has a bounded queue. Overflow is reported as a sequence gap and never delays the observed application operation. A closed source drops later publications instead of raising. `cordis.getTree()` reads the Worker's latest detached semantic snapshot without creating a CDP session or enabling Runtime, Debugger, or Sources.
 
 <a id="cordis-tree-inspection"></a>
 ## Cordis tree inspection
@@ -167,7 +167,7 @@ None; this package neither assembles nor sends a provider request.
 - **Client identity arbitration requires Web Locks** — browsers without that API retain reconnect and refresh identity through `sessionStorage`, but cannot distinguish two simultaneously live tabs copied from the same storage state.
 - **Fetch interception covers `globalThis.fetch`** — direct Undici APIs and fetch references retained before activation are not observed.
 - **Body cloning has cost** — full capture tees request and response streams up to the configured limits and can increase memory and I/O pressure. The retained-body limit does not include buffering inside the stream tee, including an oversized source chunk or data queued for a slower application reader.
-- **No automatic Worker restart** — an unexpected Worker exit fails the current Inspector instance; lifecycle recovery belongs to a later change.
+- **No automatic Worker restart** — an unexpected Worker exit fails the current Inspector instance and stops its Cordis observation while the Host keeps running; lifecycle recovery belongs to a later change.
 
 <a id="dev-note"></a>
 ### Dev Note
