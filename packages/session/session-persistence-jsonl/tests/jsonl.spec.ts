@@ -2,7 +2,7 @@ import { type MessageId, createMessage } from '@deepseek-ai/dsh-llm'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { appendFile, mkdtemp, mkdir, open, rm, readFile, writeFile, readdir, stat, symlink, utimes } from 'node:fs/promises'
+import { appendFile, copyFile, mkdtemp, mkdir, open, rm, readFile, writeFile, readdir, stat, symlink, utimes } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -2769,12 +2769,20 @@ describe('JsonlSessionPersistence: edge cases', () => {
       .toThrow(/retired policy baseline fields/)
   })
 
-  it('list rejects a header whose cwd does not identify its physical log', async () => {
-    const m = meta('misplaced', '/stored')
+  it('list skips a header whose cwd does not identify its physical log', async () => {
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
+    const id = brandString<SessionId>('misplaced')
+    const m = meta(id, '/stored')
     await writeLog(ctx.sessionPersistence, m, oneTurnLog())
     await rewriteHeader(rawLogPath(root, m.cwd, m.id), (header) => { header.cwd = '/elsewhere' })
 
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/and cwd identify/)
+    // One untrusted copy is skipped and reported instead of failing the scan
+    // that every workspace's startup depends on.
+    expect((await ctx.sessionPersistence.list()).map(s => s.header.id)).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('list skipped'))
+    expect(await readFile(rawLogPath(root, m.cwd, m.id), 'utf8')).toContain('"misplaced"')
+    // Direct access to the misplaced copy still fails loud.
+    await expect(ctx.sessionPersistence.open(id, 'read')).rejects.toThrow(/and cwd identify/)
   })
 
   it('accepts an alternate project path only when it identifies the same physical log', async () => {
@@ -2793,7 +2801,8 @@ describe('JsonlSessionPersistence: edge cases', () => {
     expect((await ctx.sessionPersistence.list()).map(s => s.header.id)).toContain(m.id)
   })
 
-  it('list rejects a session header whose id cannot name a storage path', async () => {
+  it('list skips a session header whose id cannot name a storage path', async () => {
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
     const dir = join(projectDir(root, undefined), 'invalid-id')
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, generationLogFilename(SESSION_FORMAT_VERSION, 'none')), JSON.stringify({
@@ -2801,10 +2810,14 @@ describe('JsonlSessionPersistence: edge cases', () => {
       isSeeded: false, delegationDepth: 0,
     }) + '\n')
 
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/header id cannot name a storage path/)
+    // A header that cannot address its own log is unopenable; listing skips
+    // and reports it instead of failing the scan.
+    expect(await ctx.sessionPersistence.list()).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('list skipped'))
   })
 
-  it('open and list reject one id materialized in multiple project directories', async () => {
+  it('open and list resolve one id materialized in multiple project directories', async () => {
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
     const id = brandString<SessionId>('duplicate')
     for (const cwd of ['/a', '/b']) {
       const m = meta(id, cwd)
@@ -2812,9 +2825,59 @@ describe('JsonlSessionPersistence: edge cases', () => {
       const content = [JSON.stringify(toHeaderLine(m)), ...oneTurnLog().map(event => JSON.stringify(event))].join('\n') + '\n'
       await writeFile(rawLogPath(root, cwd, id), content)
     }
+    // Each copy names its own bucket, so neither is misplaced; the newest
+    // physical write wins both the listing and the open.
+    await utimes(rawLogPath(root, '/a', id), new Date(1000), new Date(1000))
+    await utimes(rawLogPath(root, '/b', id), new Date(2000), new Date(2000))
 
-    await expect(ctx.sessionPersistence.open(id, 'read')).rejects.toThrow(/appears in multiple project directories/)
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/appears in multiple project directories/)
+    const listed = await ctx.sessionPersistence.list()
+    const copies = listed.filter(s => s.header.id === id)
+    expect(copies).toHaveLength(1)
+    expect(copies[0]?.location).toEqual({ kind: 'jsonl', path: rawLogPath(root, '/b', id) })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('multiple project directories'))
+    expect((await readAll(ctx.sessionPersistence, id)).meta.cwd).toBe('/b')
+    // The losing copy stays on disk untouched.
+    expect(await readFile(rawLogPath(root, '/a', id), 'utf8')).toContain('"duplicate"')
+  })
+
+  it('list keeps the self-consistent copy when a duplicate is misplaced', async () => {
+    // The reported cross-workspace move: the session directory is copied into
+    // the other workspace's bucket while the original keeps receiving writes,
+    // so the stale copy carries the original header cwd and fails identity.
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
+    const id = brandString<SessionId>('moved')
+    const m = meta(id, '/projA')
+    await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    await mkdir(sessionDir(root, '/projB', id), { recursive: true })
+    await copyFile(rawLogPath(root, '/projA', id), rawLogPath(root, '/projB', id))
+    // Even a newer misplaced copy loses to the self-consistent original.
+    await utimes(rawLogPath(root, '/projB', id), new Date(5000), new Date(5000))
+
+    const listed = await ctx.sessionPersistence.list()
+    const copies = listed.filter(s => s.header.id === id)
+    expect(copies).toHaveLength(1)
+    expect(copies[0]?.location).toEqual({ kind: 'jsonl', path: rawLogPath(root, '/projA', id) })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('list skipped'))
+    expect((await readAll(ctx.sessionPersistence, id)).meta.cwd).toBe('/projA')
+    expect(await readFile(rawLogPath(root, '/projB', id), 'utf8')).toContain('"moved"')
+  })
+
+  it('open stays loud when every duplicate copy fails identity validation', async () => {
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
+    const id = brandString<SessionId>('twin')
+    for (const cwd of ['/a', '/b']) {
+      const m = meta(id, cwd)
+      await mkdir(sessionDir(root, cwd, id), { recursive: true })
+      const content = [JSON.stringify(toHeaderLine(m)), ...oneTurnLog().map(event => JSON.stringify(event))].join('\n') + '\n'
+      await writeFile(rawLogPath(root, cwd, id), content)
+      await rewriteHeader(rawLogPath(root, cwd, id), (header) => { header.cwd = '/elsewhere' })
+    }
+
+    // No copy is trustworthy: the listing skips both, and a direct open of
+    // the id still fails loud instead of falling through to damaged data.
+    expect((await ctx.sessionPersistence.list()).map(s => s.header.id)).not.toContain(id)
+    await expect(ctx.sessionPersistence.open(id, 'read')).rejects.toThrow(/and cwd identify/)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('list skipped'))
   })
 
   it('create rejects an id already on disk under a different project directory', async () => {

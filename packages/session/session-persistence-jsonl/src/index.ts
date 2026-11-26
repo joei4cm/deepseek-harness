@@ -1251,20 +1251,28 @@ export class JsonlSessionPersistence extends SessionPersistence {
       listed.set(selected.sourcePath, { revision, metadata })
       return { selected, revision, identity, metadata }
     })
-    const artifacts: Array<GenerationHeader & { path: string; sourceVersion: number; identity: JsonlPhysicalIdentity }> = []
+    const artifacts: ListedGeneration[] = []
     const revisions: Array<readonly [string, string]> = []
-    const ids = new Set<SessionId>()
+    const listedById = new Map<SessionId, ListedGeneration>()
     for (const outcome of headers) {
       if (outcome.status === 'rejected') throw outcome.reason
       const { selected, revision, identity, metadata } = outcome.value
       revisions.push([selected.sourcePath, revision])
       if (identity === undefined || metadata === undefined) continue
-      if (ids.has(metadata.header.id)) {
-        throw new Error(`duplicate JSONL session id "${metadata.header.id}" appears in multiple project directories`)
+      const artifact: ListedGeneration = { ...metadata, path: selected.sourcePath, sourceVersion: selected.sourceVersion, identity }
+      const incumbent = listedById.get(metadata.header.id)
+      if (incumbent === undefined) {
+        listedById.set(metadata.header.id, artifact)
+        continue
       }
-      ids.add(metadata.header.id)
-      artifacts.push({ ...metadata, path: selected.sourcePath, sourceVersion: selected.sourceVersion, identity })
+      // One id in several project directories resolves to one listed Session
+      // instead of failing the whole scan; the losing copy stays on disk.
+      const winner = newerStoredCopy(incumbent, artifact)
+      listedById.set(metadata.header.id, winner)
+      const loser = winner === incumbent ? artifact : incumbent
+      this.ctx.logger.warn(`${name}: session "${metadata.header.id}" appears in multiple project directories; list keeps "${winner.path}" and skips "${loser.path}"`)
     }
+    artifacts.push(...listedById.values())
     signal?.throwIfAborted()
     this.listedHeaders = listed
     return { artifacts, revisions }
@@ -1279,6 +1287,7 @@ export class JsonlSessionPersistence extends SessionPersistence {
       return await this.readGenerationHeader(selected, undefined, signal)
     } catch (error: unknown) {
       if (error instanceof SessionFormatUnsupportedError || error instanceof SessionPersistenceCorruptionError) {
+        this.ctx.logger.warn(`${name}: list skipped a session log that failed validation (raw log: ${selected.sourcePath}): ${String(error)}`)
         return undefined
       }
       throw error
@@ -1698,11 +1707,52 @@ export class JsonlSessionPersistence extends SessionPersistence {
       const selected = await this.resolveGenerationInDirectory(dir, signal)
       if (selected !== undefined) matches.push(selected)
     }
-    if (matches.length > 1) {
-      throw new Error(`duplicate JSONL session id "${id}" appears in multiple project directories`)
-    }
+    if (matches.length > 1) return this.resolveDuplicateLog(id, matches, signal)
     signal?.throwIfAborted()
     return matches[0]
+  }
+
+  /**
+   * Pick the authoritative log when one id exists in several project
+   * directories: a copy whose header identifies its own physical location
+   * wins over one that fails that check; remaining ties go to the newest
+   * physical write, then the stable path order. Losing copies stay on disk
+   * and the resolution is reported. Every selected copy still passes the
+   * identity validation again before any read or append uses it.
+   */
+  private async resolveDuplicateLog(
+    id: SessionId,
+    matches: readonly ResolvedJsonlGeneration[],
+    signal?: AbortSignal,
+  ): Promise<ResolvedJsonlGeneration | undefined> {
+    const candidates: Array<{ path: string; match: ResolvedJsonlGeneration; verified: boolean; identity: JsonlPhysicalIdentity }> = []
+    for (const match of matches) {
+      signal?.throwIfAborted()
+      let identity: JsonlPhysicalIdentity
+      try {
+        identity = await stat(match.sourcePath, { bigint: true })
+      } catch (error: unknown) {
+        if (isENOENT(error)) continue
+        throw error
+      }
+      let verified = false
+      try {
+        verified = await this.readGenerationHeader(match, id, signal) !== undefined
+      } catch (error: unknown) {
+        if (!(error instanceof SessionFormatUnsupportedError) && !(error instanceof SessionPersistenceCorruptionError)) throw error
+      }
+      candidates.push({ path: match.sourcePath, match, verified, identity })
+    }
+    if (candidates.length === 0) return undefined
+    const verifiedPool = candidates.filter(candidate => candidate.verified)
+    const pool = verifiedPool.length > 0 ? verifiedPool : candidates
+    const winner = pool.reduce(newerStoredCopy)
+    for (const candidate of candidates) {
+      if (candidate !== winner) {
+        this.ctx.logger.warn(`${name}: session "${id}" appears in multiple project directories; opens keep "${winner.path}" and skip "${candidate.path}"`)
+      }
+    }
+    return winner.match
   }
 
   /** Require an existing configured root to be a readable directory. */
@@ -1715,7 +1765,12 @@ export class JsonlSessionPersistence extends SessionPersistence {
     }
   }
 
-  /** Reject metadata that does not identify the selected physical log. */
+  /**
+   * Reject metadata that does not identify the selected physical log.
+   *
+   * Failures use {@link SessionPersistenceCorruptionError} so the listing scan
+   * can skip a copy it cannot trust, while direct reads and appends stay loud.
+   */
   private async assertStoredIdentity(
     path: string,
     storedVersion: number,
@@ -1725,7 +1780,10 @@ export class JsonlSessionPersistence extends SessionPersistence {
   ): Promise<void> {
     signal?.throwIfAborted()
     if (expectedId !== undefined && meta.id !== expectedId) {
-      throw new Error(`corrupt session log "${path}": requested id "${expectedId}" does not match header id "${meta.id}"`)
+      throw new SessionPersistenceCorruptionError(
+        `corrupt session log "${path}": requested id "${expectedId}" does not match header id "${meta.id}"`,
+        { cause: new Error('header id does not match the requested id') },
+      )
     }
     let expectedPath: string
     try {
@@ -1737,10 +1795,13 @@ export class JsonlSessionPersistence extends SessionPersistence {
         this.compression,
       )
     } catch (error) {
-      throw new Error(`corrupt session log "${path}": header id cannot name a storage path`, { cause: error })
+      throw new SessionPersistenceCorruptionError(`corrupt session log "${path}": header id cannot name a storage path`, { cause: error })
     }
     if (path !== expectedPath && !await this.sameFile(path, expectedPath, signal)) {
-      throw new Error(`corrupt session log "${path}": header id "${meta.id}" and cwd identify "${expectedPath}"`)
+      throw new SessionPersistenceCorruptionError(
+        `corrupt session log "${path}": header id "${meta.id}" and cwd identify "${expectedPath}"`,
+        { cause: new Error('stored log is not at the location its header identifies') },
+      )
     }
     signal?.throwIfAborted()
   }
@@ -1921,6 +1982,20 @@ export class JsonlSessionPersistence extends SessionPersistence {
 
 /** JSONL persistence plugin label. */
 export const name = 'session-persistence-jsonl'
+
+/** One materialized generation header selected by the listing scan. */
+type ListedGeneration = GenerationHeader & { path: string; sourceVersion: number; identity: JsonlPhysicalIdentity }
+
+/**
+ * Pick the copy that wins a duplicate-id resolution: the newest physical
+ * write, then the stable path order as a deterministic tiebreak.
+ */
+function newerStoredCopy<T extends { path: string; identity: JsonlPhysicalIdentity }>(left: T, right: T): T {
+  if (left.identity.mtimeNs !== right.identity.mtimeNs) {
+    return left.identity.mtimeNs > right.identity.mtimeNs ? left : right
+  }
+  return left.path > right.path ? left : right
+}
 
 /** Loader schema for the backend's root, physical encoding, and listing concurrency. */
 export const Config: z<Config> = z.object({
