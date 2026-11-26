@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { Context } from '@deepseek-ai/cordis'
-import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import z from '@deepseek-ai/schemastery'
 import semver from 'semver'
@@ -19,7 +19,7 @@ import { readBundleDocument, readBundleImage, type BundleDetailOptions } from '.
 import { pluginEntryId, readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import {
   readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries,
-  readProfilePatches, bundlePatchPaths,
+  readProfilePatches, bundlePatchPaths, loadProfileDirectory, loadOptionalPatches, PROFILE_PATCH_FILENAME,
   evaluatePluginCompatibility, readProfileCompatibility, readProfileVersionExemptions,
   setProfileVersionExemption, validatePluginVersionExemption, PROFILE_COMPATIBILITY_FILENAME,
   getDshRuntimeVersion, ResolutionRestartRequired,
@@ -110,7 +110,8 @@ function messageOf(error: unknown): string { return error instanceof Error ? err
 function managementError(error: unknown): ManagementError {
   if (error instanceof UnsupportedBundlePlatformError) return { code: 'unsupported-platform' }
   if (!(error instanceof ManagementFailure)) return { code: 'operation-error', diagnostic: messageOf(error) }
-  return { code: error.code, ...error.incompatible === undefined ? {} : { incompatible: error.incompatible } }
+  return { code: error.code, ...error.incompatible === undefined ? {} : { incompatible: error.incompatible },
+    ...error.diagnostic === undefined ? {} : { diagnostic: error.diagnostic } }
 }
 
 /** The caller stopped an installation; its files are restored before this is thrown. */
@@ -1058,10 +1059,9 @@ export class PluginManager extends TypertRemoteService {
           await this.selectBundle(name, false)
           Object.assign(result, await this.reload())
         }
-        if ([...this.ctx.loader.entries()].some(entry => entry.fiber?.uid != null
-          && contributions.some(row => row.id === entry.options.id && row.name === entry.options.name))) {
-          throw new ManagementFailure('bundle-in-use')
-        }
+        const retained = [...this.ctx.loader.entries()].filter(entry => entry.fiber?.uid != null
+          && contributions.some(row => row.id === entry.options.id && row.name === entry.options.name))
+        if (retained.length > 0) throw new ManagementFailure('bundle-in-use', undefined, this.inUseDiagnostic(retained))
         return bundle.installed
       })
       if (!installed) return
@@ -1193,6 +1193,53 @@ export class PluginManager extends TypertRemoteService {
     if (info?.dsh?.bundle === undefined) return []
     const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
     return flatten(composeEntries([bundlePatchPaths(dir, info.dsh.bundle).flatMap(file => loadOverlayPatches('dsh', file))]))
+  }
+
+  /**
+   * Name the entries that keep a bundle in use, and what still declares them.
+   *
+   * A layer whose patches insert the row keeps the component mounted, and the user can disable it there. A row that
+   * only the profile's root config still lists is a launcher artifact: that file is rewritten as an empty entry list
+   * at every start, so the next start drops the component.
+   * @param retained The running entries that carry one of the bundle's rows.
+   * @returns The technical detail the caller shows next to its localized sentence.
+   */
+  private inUseDiagnostic(retained: readonly Entry[]): string {
+    const declared = this.declaringLayers()
+    return retained.flatMap((entry) => {
+      const id = entry.options.id
+      if (typeof id !== 'string') return []
+      const source = declared.get(id)
+      const holder = source === undefined
+        ? entry.parent.tree.ctx.fiber.entry?.id === 'include'
+          ? 'only the profile root config lists it, and the next start resets that file'
+          : 'another configuration file declares it'
+        : source
+      return [`${id} (${entry.options.name}) still runs; ${holder}`]
+    }).join('; ')
+  }
+
+  /**
+   * The layers that still declare an entry, by entry id.
+   * @returns Each declaring layer's description, keyed by the ids its patches insert.
+   */
+  private declaringLayers(): Map<string, string> {
+    const declared = new Map<string, string>()
+    const profile = loadProfileDirectory('dsh', this.profile.dir, this.profile.installAnchor)
+    const home = join(this.profile.home, PROFILE_PATCH_FILENAME)
+    const sources: [string, PatchOptions[]][] = [
+      ...profile.layers.map((layer): [string, PatchOptions[]] => [`the bundle ${layer.packageName}`, layer.patches]),
+      [this.profile.patchPath, profile.patches],
+      [home, loadOptionalPatches('dsh', home) ?? []],
+      ...this.profile.overlays.map((overlay, index): [string, PatchOptions[]] => [`launch overlay ${index + 1}`, [overlay]]),
+    ]
+    for (const [source, patches] of sources) {
+      // An override row changes a row another layer declares; only an inserted row declares one.
+      for (const row of flatten(composeEntries([patches.filter(item => item.insert !== undefined)]))) {
+        if (typeof row.id === 'string' && !declared.has(row.id)) declared.set(row.id, source)
+      }
+    }
+    return declared
   }
 
   private protectsManager(name: string): boolean {

@@ -73,8 +73,9 @@ const FAILED_KEYS = {
 } satisfies Record<FailedAction, PluginManagerLocaleKey>
 
 /**
- * What a management error reads as: the code's sentence; for an incompatibility, one sentence per
- * package it names, then the remedy for an install or for an installed plugin; or, for an operation error, the Host's diagnostic as it is.
+ * What a management error reads as: the code's sentence, followed by the Host's diagnostic when it has one; for an
+ * incompatibility, one sentence per package it names, then the remedy for an install or for an installed plugin; or,
+ * for an operation error, the Host's diagnostic as it is.
  * @param error - the Host's code, its diagnostic, and the packages an incompatibility names.
  * @param t - the manager's translate seat.
  * @returns the sentence.
@@ -96,7 +97,11 @@ export function managementText(error: {
       }))
     return [...sentences, t(error.installing ? 'reasonIncompatibleInstall' : 'reasonIncompatibleInstalled')].join(t('sentenceSeparator'))
   }
-  if (error.code !== 'operation-error') return t(CODE_KEYS[error.code])
+  if (error.code !== 'operation-error') {
+    const sentence = t(CODE_KEYS[error.code])
+    // The Host's diagnostic names what still holds a bundle in use; the localized sentence keeps its place.
+    return error.diagnostic === undefined || error.diagnostic === '' ? sentence : `${sentence}: ${error.diagnostic}`
+  }
   return error.diagnostic === undefined || error.diagnostic === '' ? t('reasonOperationError') : error.diagnostic
 }
 

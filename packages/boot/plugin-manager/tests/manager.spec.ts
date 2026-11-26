@@ -22,6 +22,7 @@ import Hmr from '@deepseek-ai/dsh-hmr'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { Group } from '@deepseek-ai/cordis-plugin-loader'
+import ConfigEditor from '../../config-editor/src/index.ts'
 import * as operations from '../src/operations.ts'
 import * as githubConnection from '../src/github-connection.ts'
 import * as gitTransport from '../src/git-transport.ts'
@@ -393,6 +394,50 @@ it.each(['live', 'startup'] as const)('removes a bundle skipped at startup in a 
   onTestFinished(() => { remove.mockRestore() })
   expect(await manager.removeBundle('extra')).toMatchObject({ changed: true, application: mode === 'live' ? 'applied' : 'restart-required' })
   expect((await manager.listBundles()).some(row => row.name === 'extra')).toBe(false)
+})
+
+it('removes a bundle whose component the config editor configured', async () => {
+  const { manager, dir, ctx } = await fixture('live')
+  await ctx.plugin(ConfigEditor)
+  const entry = [...ctx.loader.entries()].find(row => row.options.id === 'managed')!
+  await ctx.configEditor.edit(entry, current => ({ ...current, service: 'managedProbe' }))
+  // The settings row names the component the bundle contributed, so it holds that component while the bundle runs.
+  expect(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')).toContain('id: managed')
+  const remove = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async () => {
+    const manifest = readProfileManifest('test', dir)
+    delete manifest.dependencies?.extra
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+    return { exitCode: 0, output: 'removed', truncated: false, logPath: join(dir, 'pnpm.log') }
+  })
+  onTestFinished(() => { remove.mockRestore() })
+  expect(await manager.removeBundle('extra')).toMatchObject({ changed: true, application: 'applied' })
+  expect(remove).toHaveBeenCalledOnce()
+})
+
+it('names the entries that keep a bundle in use', async () => {
+  const { ctx, manager, overlays } = await fixture()
+  const entry = [...ctx.loader.entries()].find(row => row.id === 'include:managed')!
+  overlays.push({ insert: [{ ...entry.options }] })
+  const remove = vi.spyOn(operations, 'runProfilePnpm')
+  onTestFinished(() => { remove.mockRestore() })
+  const result = await manager.removeBundle('extra')
+  expect(result).toMatchObject({ application: 'failed', error: { code: 'bundle-in-use' } })
+  expect(result.error?.diagnostic).toContain('managed')
+  expect(result.error?.diagnostic).toContain('launch overlay 1')
+  expect(remove).not.toHaveBeenCalled()
+})
+
+it('names the profile root config when only it keeps a bundle in use', async () => {
+  const { manager } = await fixture('live', false, undefined, {}, undefined, (dir) => {
+    const resolved = pathToFileURL(join(dir, 'node_modules', 'extra', 'plugin.mjs')).href
+    writeFileSync(join(dir, 'cordis.yml'), `- id: managed\n  name: ${resolved}\n`)
+  })
+  const remove = vi.spyOn(operations, 'runProfilePnpm')
+  onTestFinished(() => { remove.mockRestore() })
+  const result = await manager.removeBundle('extra')
+  expect(result).toMatchObject({ application: 'failed', error: { code: 'bundle-in-use' } })
+  expect(result.error?.diagnostic).toContain('profile root config')
+  expect(remove).not.toHaveBeenCalled()
 })
 
 it('recomposes the remaining layers while another bundle is broken and mounts it after repair', async () => {
