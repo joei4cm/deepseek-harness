@@ -41,6 +41,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `35-native-command-wayland-socket-probe.md` | `fix/native-command-wayland-socket-probe` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14333` |
 | `36-plugin-manager-bundle-in-use-diagnostic.md` | `fix/plugin-manager-bundle-in-use-diagnostic` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14345` |
 | `37-llm-request-lone-surrogate.md` | `fix/llm-request-lone-surrogate` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14391` |
+| `38-session-list-duplicate-id.md` | `fix/session-list-duplicate-id` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14332` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
