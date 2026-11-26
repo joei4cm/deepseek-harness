@@ -55,7 +55,7 @@ Desktop Host 的 Platform API 请求与更新策略请求用相同的 Platform �
 
 账号凭据被服务端判定失效后，未配置官方 API key 时返回 Welcome；有可用 API key 时保持工作区打开。主动退出登录遵循相同规则。Welcome 和工作区均显示本地化的登录失效提示。
 
-桌面麦克风访问仅允许主 `dsh-app://app` 页面发起的音频请求。macOS 使用系统麦克风授权、随包用途说明，以及主应用与 Helper 签名中的 `com.apple.security.device.audio-input` 权限。
+桌面麦克风访问仅允许主 `dsh-app://app` 页面发起的音频请求。macOS 使用系统麦克风授权、随包用途说明，以及主应用与 Helper 签名中的 `com.apple.security.device.audio-input` 权限。macOS 应用包还声明 `NSLocalNetworkUsageDescription`，使宿主、其插件以及由其启动的 MCP 服务器可以通过系统的本地网络授权访问局域网设备，而不是因缺少声明而报 `EHOSTUNREACH`。
 
 按 F12（多媒体功能键键盘上为 Fn+F12）、macOS 的 Command+Option+I 或 Windows 的 Ctrl+Shift+I，可切换当前获得焦点的应用页面的 DevTools，打包版本同样支持。应用菜单在隐藏和退出命令之前的独立分组中显示本地化的“开发者工具”命令。Windows 在标题栏的应用弹出菜单中显示开关，通过隐藏的原生应用菜单注册快捷键；macOS 和 Linux 的应用菜单保留隐藏的 F12 快捷键别名。更新遮罩和打包版本的内嵌浏览器禁用 DevTools。
 
