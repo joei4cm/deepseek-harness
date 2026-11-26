@@ -35,6 +35,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `29-config-editor-insert-row-edit.md` | `fix/config-editor-insert-row-edit` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14368` |
 | `30-macos-local-network-usage-description.md` | `fix/macos-local-network-usage-description` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14378` |
 | `31-session-follow-passive-open.md` | `fix/session-follow-passive-open` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14351` |
+| `32-token-meter-zero-usage-sample.md` | `fix/token-meter-zero-usage-sample` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14387` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
