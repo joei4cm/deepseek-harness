@@ -39,6 +39,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `33-llm-deepseek-reasoning-only-history.md` | `fix/llm-deepseek-reasoning-only-history` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14340` |
 | `34-llm-reasoning-only-empty-response.md` | `fix/llm-reasoning-only-empty-response` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14334` |
 | `35-native-command-wayland-socket-probe.md` | `fix/native-command-wayland-socket-probe` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14333` |
+| `36-plugin-manager-bundle-in-use-diagnostic.md` | `fix/plugin-manager-bundle-in-use-diagnostic` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14345` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
