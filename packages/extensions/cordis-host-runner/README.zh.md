@@ -53,6 +53,8 @@ Client 查询在 `clientInspectTimeoutMs` 内接受首个有效页面响应。�
 
 查询失败抛出 `InspectError`：`INSPECT_PROVIDER_NOT_FOUND`、`INSPECT_METHOD_NOT_FOUND` 与 `INSPECT_INVALID_INPUT` 在发送前拒绝请求；`INSPECT_INVALID_OUTPUT` 拒绝提供方返回值；`INSPECT_CLIENT_UNAVAILABLE` 表示没有页面或注册表已卸载；`INSPECT_TIMEOUT` 表示 Client 期限已到。Host 提供方可以抛出自己的 `HarnessError`，例如 `INSPECT_TARGET_NOT_FOUND`；其他提供方失败变为 `INSPECT_FAILED`，原始错误保留为 `cause`。取消时重新抛出信号的 reason。
 
+输入 schema 为对象的 method 永远不会接受字符串，因此携带该对象 JSON 编码字符串的输入会在校验前被解码，并以对象形式到达提供方。其他字符串仍按 `INSPECT_INVALID_INPUT` 拒绝。
+
 ### run 会做什么
 
 程序调用方使用 `define`、`run`、`stop` 和 `undefine`；浏览器面板操作已有定义。仅含 Host 的包在本进程激活。带浏览器部分的包等待审批或取消，批准后先加载 Host 再加载 Client。`mode: "run"` 启动当前版本，`mode: "update"` 替换版本。Stop 释放运行中的 effect 并保留定义；undefine 还会移除定义。

@@ -6,7 +6,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { HarnessError } from '@deepseek-ai/dsh-error'
 import type {} from '@deepseek-ai/dsh-api-gateway'
-import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
+import { isJsonValue, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { assertSupportedJsonSchema, validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
 import type {
@@ -148,7 +148,8 @@ export class CordisInspectRegistryService extends Service {
    * @param platform - Host or Client runtime.
    * @param providerId - provider selected from {@link list}.
    * @param methodName - declared method name.
-   * @param input - optional lossless JSON input.
+   * @param input - optional lossless JSON input; a method whose input schema is an object
+   *   also accepts that object as a JSON-encoded string.
    * @param agent - requesting Agent and scope.
    * @param signal - tool-call cancellation.
    * @returns provider JSON data; Client queries fail fast when Gateway has no live Client
@@ -171,11 +172,12 @@ export class CordisInspectRegistryService extends Service {
         throw new InspectError(`Host Cordis inspect provider "${providerId}" is not registered`, 'INSPECT_PROVIDER_NOT_FOUND')
       }
       const method = findMethod(registration.manifest, methodName)
-      validateInput('Host', providerId, method, input)
+      const decodedInput = decodeEncodedInput(method, input)
+      validateInput('Host', providerId, method, decodedInput)
       signal.throwIfAborted()
       let data: JsonValue
       try {
-        data = await registration.query(methodName, input, { agent, signal })
+        data = await registration.query(methodName, decodedInput, { agent, signal })
       } catch (error) {
         // The cancellation itself passes through for the tool registry to classify as ABORTED.
         if (error instanceof HarnessError || isCancellation(error, signal)) throw error
@@ -234,7 +236,8 @@ export class CordisInspectRegistryService extends Service {
       throw new InspectError(`Client Cordis inspect provider "${providerId}" is not registered`, 'INSPECT_PROVIDER_NOT_FOUND')
     }
     const method = findMethod(provider, methodName)
-    validateInput('Client', providerId, method, input)
+    const decodedInput = decodeEncodedInput(method, input)
+    validateInput('Client', providerId, method, decodedInput)
     signal.throwIfAborted()
     const gateway = this.ctx.get('typertGateway')
     if (gateway !== undefined && !gateway.hasLiveClient()) {
@@ -249,7 +252,7 @@ export class CordisInspectRegistryService extends Service {
       agentId: agent.id,
       provider: providerId,
       method: methodName,
-      ...input === undefined ? {} : { input },
+      ...decodedInput === undefined ? {} : { input: decodedInput },
     }
     const result = new Promise<CordisInspectQueryResolution>((resolve) => {
       this.pending.set(requestId, {
@@ -334,6 +337,32 @@ function findMethod(manifest: CordisInspectProviderManifest, name: string): Cord
   const method = manifest.methods.find(candidate => candidate.name === name)
   if (method === undefined) throw new InspectError(`Cordis inspect provider "${manifest.id}" has no method "${name}"`, 'INSPECT_METHOD_NOT_FOUND')
   return method
+}
+
+/**
+ * Decode the JSON-encoded object a model sends where a method expects an object.
+ *
+ * A method whose input schema is an object never accepts a string, so decoding an
+ * encoded object cannot replace a valid value; every other input stays unchanged for
+ * schema validation to report.
+ *
+ * @param method - method whose input schema decides whether a string can be an object.
+ * @param input - model-supplied input, possibly a JSON-encoded object string.
+ * @returns the decoded object, or the original input.
+ */
+function decodeEncodedInput(method: CordisInspectMethodManifest, input: JsonValue | undefined): JsonValue | undefined {
+  if (typeof input !== 'string') return input
+  if ((method.inputSchema as JsonSchemaNode).type !== 'object') return input
+  let decoded: JsonValue
+  try {
+    decoded = JSON.parse(input) as JsonValue
+  } catch (_notJson) {
+    // Not JSON: schema validation still rejects the original string.
+    return input
+  }
+  if (typeof decoded !== 'object' || decoded === null || Array.isArray(decoded)) return input
+  if (!isJsonValue(decoded)) return input
+  return decoded
 }
 
 function validateInput(

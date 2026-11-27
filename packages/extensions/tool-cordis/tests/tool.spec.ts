@@ -42,6 +42,31 @@ it.each(['host', 'client'])('forwards the %s query, Agent, and cancellation sign
   expect(tool.presentCall?.({ query })).toMatchObject({ kind: 'read', title: `Query Cordis ${platform} Service.listService` })
 })
 
+it('decodes a JSON-encoded object input before the Host provider receives it', async () => {
+  const { ctx, tool, exec } = await fixture()
+  const agent = { ctx } as Agent
+  const received: unknown[] = []
+  onTestFinished(ctx.cordisInspect.register({
+    manifest: {
+      id: 'Service',
+      description: 'Test Service provider.',
+      methods: [{
+        name: 'listService',
+        description: 'Inspect one service.',
+        inputSchema: { type: 'object', properties: { service: { type: 'string' } }, additionalProperties: false },
+        outputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+      }],
+    },
+    query: async (_method, input) => { received.push(input); return { name: 'tools' } },
+  }))
+  expect(await tool.execute({
+    query: { platform: 'host', provider: 'Service', method: 'listService', input: '{"service":"tools"}' },
+  }, { ...exec, agent })).toEqual({
+    platform: 'host', provider: 'Service', method: 'listService', data: { name: 'tools' },
+  })
+  expect(received).toEqual([{ service: 'tools' }])
+})
+
 it('requires an Agent for a query but not for discovery', async () => {
   const { tool, exec } = await fixture()
   await expect(tool.execute({ query: { platform: 'host', provider: 'Service', method: 'listService' } }, exec))

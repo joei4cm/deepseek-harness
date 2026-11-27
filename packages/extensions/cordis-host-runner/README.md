@@ -53,6 +53,8 @@ Client queries accept the first valid page response within `clientInspectTimeout
 
 Query failures throw `InspectError`: `INSPECT_PROVIDER_NOT_FOUND`, `INSPECT_METHOD_NOT_FOUND`, and `INSPECT_INVALID_INPUT` reject the request before dispatch; `INSPECT_INVALID_OUTPUT` rejects a provider value; `INSPECT_CLIENT_UNAVAILABLE` reports a missing page or registry disposal; and `INSPECT_TIMEOUT` reports the Client deadline. A Host provider may throw its own `HarnessError`, such as `INSPECT_TARGET_NOT_FOUND`; any other provider failure becomes `INSPECT_FAILED` with the original error as `cause`. Cancellation rethrows the signal's reason.
 
+A method whose input schema is an object never accepts a string, so an input that carries that object as a JSON-encoded string is decoded before validation and reaches the provider as an object. Every other string keeps the `INSPECT_INVALID_INPUT` rejection.
+
 ### What a run does
 
 Programmatic callers use `define`, `run`, `stop`, and `undefine`; the browser panel operates existing definitions. Host-only packages activate in this process. A package with a browser half waits for approval or cancellation, then loads Host before Client. `mode: "run"` starts the current version; `mode: "update"` replaces it. Stop disposes the live effects and retains the definition; undefine also forgets it.
