@@ -844,7 +844,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('session-6')).toBeNull()
     expect(screen.queryByText('session-7')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 2 个会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '再展开 2 个会话' }))
     expect(screen.getByText('session-6')).toBeTruthy()
     expect(screen.getByText('session-7')).toBeTruthy()
     expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
@@ -854,7 +854,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByText('alpha'))
     expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true })
     expect(screen.queryByText('session-6')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 2 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '再展开 2 个会话' })).toBeTruthy()
   })
 
   it('raises the watermark to the last attention row and keeps it after the attention ends', () => {
@@ -875,7 +875,7 @@ describe('WorkspaceBrowser', () => {
     expectVisible(5)
     rerender(b, { useSessionStatus: status('session-9', { running: true }) })
     expectVisible(9)
-    expect(screen.getByRole('button', { name: '展开其余 3 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '再展开 3 个会话' })).toBeTruthy()
     rerender(b, { useSessionStatus: status('session-9', {}) })
     expectVisible(9)
 
@@ -888,7 +888,7 @@ describe('WorkspaceBrowser', () => {
     expectVisible(7)
     rerender(b, { useSessionStatus: status('session-8', { completionUnread: true, completionFailed: false }) })
     expectVisible(8)
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 4 个会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '再展开 4 个会话' }))
     expectVisible(12)
     fireEvent.click(screen.getByRole('button', { name: '收起' }))
     expectVisible(8)
@@ -914,7 +914,7 @@ describe('WorkspaceBrowser', () => {
     })
     expect(screen.getByText('session-8')).toBeTruthy()
     expect(screen.queryByText('session-9')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 4 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '再展开 4 个会话' })).toBeTruthy()
   })
 
   it('stops automatic raises at 50 rows while Show more continues past them', () => {
@@ -943,10 +943,10 @@ describe('WorkspaceBrowser', () => {
     rerender(b, { useSessionStatus: running('session-50', 'session-55') })
     expect(screen.getByText('session-50')).toBeTruthy()
     expect(screen.queryByText('session-51')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 10 个会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '再展开 5 个会话' }))
     expect(screen.getByText('session-55')).toBeTruthy()
     expect(screen.queryByText('session-56')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 5 个会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '再展开 5 个会话' }))
     expect(screen.getByText('session-60')).toBeTruthy()
   })
 
@@ -971,7 +971,7 @@ describe('WorkspaceBrowser', () => {
     rerender(b, { useSessions: hook(sessionState(items, { main: sid('session-8') })) })
     expect(screen.getByText('session-8')).toBeTruthy()
     expect(screen.queryByText('session-9')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 1 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '再展开 1 个会话' })).toBeTruthy()
   })
 
   it.each([false, true])('expands 17 ordinary sessions five at a time and resets after the final partial batch (blank: %s)', (withBlank) => {
@@ -992,29 +992,29 @@ describe('WorkspaceBrowser', () => {
     }
     expectVisible(5)
     const labels: string[] = []
-    for (const [remaining, visible] of [[12, 10], [7, 15], [2, 17]] as const) {
-      const overflow = screen.getByRole('button', { name: `展开其余 ${remaining} 个会话` })
+    for (const [batch, visible] of [[5, 10], [5, 15], [2, 17]] as const) {
+      const overflow = screen.getByRole('button', { name: `再展开 ${batch} 个会话` })
       labels.push(overflow.textContent ?? '')
       expect(screen.queryByRole('button', { name: '收起' })).toBeNull()
       fireEvent.click(overflow)
       expectVisible(visible)
     }
-    expect(screen.queryByRole('button', { name: /展开其余/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /再展开/ })).toBeNull()
     const collapse = screen.getByRole('button', { name: '收起' })
     labels.push(collapse.textContent ?? '')
     expect(labels).toMatchInlineSnapshot(`
       [
-        "展开其余 12 个会话",
-        "展开其余 7 个会话",
-        "展开其余 2 个会话",
+        "再展开 5 个会话",
+        "再展开 5 个会话",
+        "再展开 2 个会话",
         "收起",
       ]
     `)
     fireEvent.click(collapse)
     expectVisible(5)
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 12 个会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '再展开 5 个会话' }))
     expectVisible(10)
-    expect(screen.getByRole('button', { name: '展开其余 7 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '再展开 5 个会话' })).toBeTruthy()
   })
 
   it('keeps each Workspace batch limit independent when another Workspace expands or collapses', () => {
@@ -1027,26 +1027,30 @@ describe('WorkspaceBrowser', () => {
         workspace('beta', beta.map(item => item.id)),
       ])),
     })
+    // Both Workspaces now show the same batch label, so each query selects inside its section.
+    const overflowButton = (workspace: 'alpha' | 'beta') => within(
+      screen.getByText(workspace).closest<HTMLElement>('[class*="groupSection"]')!,
+    ).getByRole('button', { name: '再展开 5 个会话' })
     fireEvent.click(screen.getByText('alpha'))
     fireEvent.click(screen.getByText('beta'))
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 12 个会话' }))
+    fireEvent.click(overflowButton('alpha'))
     expect(screen.getByText('alpha-10')).toBeTruthy()
     expect(screen.queryByText('alpha-11')).toBeNull()
     expect(screen.queryByText('beta-6')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 6 个会话' }))
+    fireEvent.click(overflowButton('beta'))
     expect(screen.getByText('beta-10')).toBeTruthy()
     expect(screen.queryByText('beta-11')).toBeNull()
     fireEvent.click(screen.getByText('alpha'))
     fireEvent.click(screen.getByText('alpha'))
     expect(screen.queryByText('alpha-6')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 12 个会话' })).toBeTruthy()
+    expect(overflowButton('alpha')).toBeTruthy()
     expect(screen.getByText('beta-10')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 1 个会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '再展开 1 个会话' }))
     expect(screen.getByText('beta-11')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '收起' }))
     expect(screen.queryByText('beta-6')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 6 个会话' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '展开其余 12 个会话' })).toBeTruthy()
+    expect(overflowButton('beta')).toBeTruthy()
+    expect(overflowButton('alpha')).toBeTruthy()
   })
 
   it('keeps the blank New Session outside the five-row folding quota', () => {
@@ -1059,9 +1063,9 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('新会话')).toBeTruthy()
     for (const item of ordinary.slice(0, 5)) expect(screen.getByText(item.displayTitle)).toBeTruthy()
     expect(screen.queryByText('session-6')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 1 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '再展开 1 个会话' })).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 1 个会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '再展开 1 个会话' }))
     expect(screen.getByText('session-6')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '收起' }))
     expect(screen.queryByText('session-6')).toBeNull()
@@ -1071,7 +1075,7 @@ describe('WorkspaceBrowser', () => {
     })
     expect(screen.getByText('blank')).toBeTruthy()
     expect(screen.queryByText('session-5')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 2 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '再展开 2 个会话' })).toBeTruthy()
   })
 
   it('pins the blank while collapsed drags keep an ordinary source visible', async () => {
@@ -1113,7 +1117,7 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessionState([blank, ...ordinary], { main: blank.id })),
       useWorkspaces: hook(workspaceState([workspace('alpha', [blank.id, ...ordinary.map(item => item.id)])])),
     })
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 7 个会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '再展开 5 个会话' }))
     const source = screen.getByText('session-10').closest('[role="treeitem"]') as HTMLElement
     const target = screen.getByText('session-6').closest('[role="treeitem"]') as HTMLElement
     target.getBoundingClientRect = () => ({
@@ -1133,7 +1137,7 @@ describe('WorkspaceBrowser', () => {
     ])
     expect(screen.queryByText('session-11')).toBeNull()
     expect(screen.queryByText('session-12')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 2 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '再展开 2 个会话' })).toBeTruthy()
   })
 
   it('discards manual positions on recency selection and switches to Manual on drag', async () => {
@@ -1691,12 +1695,12 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('session-11')).toBeTruthy()
     expect(screen.queryByText('session-12')).toBeNull()
     expect(scrollIntoView.mock.instances.at(-1)).toBe(screen.getByText('session-11').closest('[role="treeitem"]'))
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 6 个会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '再展开 5 个会话' }))
     expect(screen.getByText('session-16')).toBeTruthy()
     fireEvent.click(screen.getByText('alpha'))
     fireEvent.click(screen.getByText('alpha'))
     expect(screen.queryByText('session-6')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 12 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '再展开 5 个会话' })).toBeTruthy()
   })
 
   it('reveals a search result beyond the automatic 50-row limit', () => {
@@ -1709,7 +1713,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('treeitem'))
     expect(screen.getByText('session-58')).toBeTruthy()
     expect(screen.queryByText('session-59')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 2 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '再展开 2 个会话' })).toBeTruthy()
   })
 
   it('keeps the bounded group projection when the revealed result is already within it', () => {
@@ -1731,7 +1735,7 @@ describe('WorkspaceBrowser', () => {
 
     expect(screen.getByText('Needle session')).toBeTruthy()
     expect(screen.queryByText('hidden')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 1 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '再展开 1 个会话' })).toBeTruthy()
     expect(scrollIntoView).toHaveBeenCalledOnce()
   })
 
@@ -2702,15 +2706,15 @@ describe('Workspace tree grouping', () => {
       ])),
     })
     fireEvent.click(screen.getByText('Child'))
-    fireEvent.click(within(section('Child')).getByRole('button', { name: '展开其余 2 个会话' }))
-    fireEvent.click(within(section('Projects')).getAllByRole('button', { name: '展开其余 2 个会话' })[0]!)
+    fireEvent.click(within(section('Child')).getByRole('button', { name: '再展开 2 个会话' }))
+    fireEvent.click(within(section('Projects')).getAllByRole('button', { name: '再展开 2 个会话' })[0]!)
     expect(screen.getByText('child-7')).toBeTruthy()
     expect(screen.getByText('root-7')).toBeTruthy()
     fireEvent.click(screen.getByText('Child'))
     fireEvent.click(screen.getByText('Child'))
     expect(screen.queryByText('child-6')).toBeNull()
     expect(screen.getByText('root-7')).toBeTruthy()
-    fireEvent.click(within(section('Child')).getByRole('button', { name: '展开其余 2 个会话' }))
+    fireEvent.click(within(section('Child')).getByRole('button', { name: '再展开 2 个会话' }))
     fireEvent.click(screen.getByText('Projects'))
     fireEvent.click(screen.getByText('Projects'))
     expect(screen.queryByText('root-6')).toBeNull()

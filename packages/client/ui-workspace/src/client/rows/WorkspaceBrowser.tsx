@@ -477,6 +477,8 @@ function SessionTree({
     const collapsed = watermarkRows(group.sessions, baselines.get(group.key) ?? SESSION_WATERMARK_BASE)
     const visible = watermarkRows(group.sessions, watermark)
     const sessionsExpanded = visible.hiddenCount === 0
+    // Rows the next expand click reveals; the button label names exactly this batch.
+    const sessionExpandBatch = Math.min(visible.hiddenCount, SESSION_WATERMARK_BASE)
     rowKeys.push(`workspace:${group.key}`)
     const childRows = group.expanded ? children.map(child => renderGroup(child, depth + 1)) : []
     const sessions = visible.rows
@@ -646,7 +648,7 @@ function SessionTree({
           >
             {sessionsExpanded
               ? t('sessions.collapse')
-              : t('sessions.expand', { n: visible.hiddenCount })}
+              : t('sessions.expand', { n: sessionExpandBatch })}
           </button>
         )}
       </div>

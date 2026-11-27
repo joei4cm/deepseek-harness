@@ -36,7 +36,7 @@ export const zh = {
   'viewOptions.hideArchived': '隐藏已归档',
   'viewOptions.showArchived': '全部对话（显示已归档）',
   'viewOptions.onlyArchived': '仅显示已归档',
-  'sessions.expand': '展开其余 {n} 个会话',
+  'sessions.expand': '再展开 {n} 个会话',
   'sessions.collapse': '收起',
   'empty.none': '暂无会话',
   'empty.noneArchived': '暂无已归档会话',
