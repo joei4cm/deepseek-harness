@@ -104,6 +104,13 @@ it('rejects code containing the reserved prefix before running it', async () => 
   expect(await run('typeof ran')).toMatchObject({ value: 'undefined' })
 })
 
+it('rejects an escaped reserved identifier before program side effects', async () => {
+  const { run } = await scopedReplRuntime()
+  const escaped = `${String.fromCharCode(92)}u005f_$binding_getters`
+  expect((await run(`globalThis.ran = true\nconst ${escaped} = 1`)).error?.message).toContain("Names starting with '__$binding_' are reserved")
+  expect(await run('typeof ran')).toMatchObject({ value: 'undefined' })
+})
+
 it.each(['global', 'errorClass'] as const)('rejects a reserved scoped REPL %s name before starting a process', async (field) => {
   const { ctx, runtime, stateOwner, run } = await scopedReplRuntime()
   const spawn = vi.spyOn(ctx.subprocess, 'spawn')

@@ -1,6 +1,6 @@
 /** Scope chain for scoped REPL programs: acorn scanning, copied bindings between programs, and Script compilation. */
 import { getLineInfo, parse } from 'acorn'
-import type { Identifier, ModuleDeclaration, Pattern, Program, Statement } from 'acorn'
+import type { Identifier, ModuleDeclaration, Pattern, Program, Statement, Token } from 'acorn'
 import { Script, type Context, type ScriptOptions } from 'node:vm'
 
 /** Declaration keyword recorded for a top-level binding; later programs copy `var` bindings as `var` and every other binding as `let`. */
@@ -58,11 +58,19 @@ export function scanProgram(code: string, options: { filename: string }): Scoped
   const reserved = code.indexOf(RESERVED_PREFIX)
   if (reserved >= 0) throw programSyntaxError(code, options.filename, reserved, `Names starting with '${RESERVED_PREFIX}' are reserved`)
   let program: Program
+  let escapedReserved: number | undefined
   try {
-    program = parse(code, { ecmaVersion: 'latest', sourceType: 'script', allowAwaitOutsideFunction: true })
+    program = parse(code, {
+      ecmaVersion: 'latest', sourceType: 'script', allowAwaitOutsideFunction: true,
+      ...(code.includes('\\') ? { onToken: (token: Token) => {
+        if (escapedReserved === undefined && token.type.label === 'name' && 'value' in token
+          && typeof token.value === 'string' && token.value.includes(RESERVED_PREFIX)) escapedReserved = token.start
+      } } : {}),
+    })
   } catch (error: unknown) {
     throw parseFailure(code, options.filename, error)
   }
+  if (escapedReserved !== undefined) throw programSyntaxError(code, options.filename, escapedReserved, `Names starting with '${RESERVED_PREFIX}' are reserved`)
   const declarations = new Map<string, ScopedReplBindingKind>()
   const declare = (identifier: Identifier, kind: ScopedReplBindingKind): void => {
     // A function declaration initializes the name before any statement runs, so a var of the same name never replaces it.

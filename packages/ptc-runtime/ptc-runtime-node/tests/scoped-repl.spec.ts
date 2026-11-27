@@ -162,6 +162,15 @@ describe('syntax errors', () => {
     expect(error.stack).toMatch(new RegExp(`^/work/ptc-program-1\\.js:${line}\\n[^\\n]*\\n {${column}}\\^\\n\\nSyntaxError: Names starting`))
   })
 
+  it('rejects escaped reserved identifiers before executing the program', () => {
+    const escape = String.fromCharCode(92)
+    const code = `globalThis.ran = true\nconst ${escape}u005f_$binding_getters = 1`
+    const error = syntaxError(code)
+    expect(error.message).toBe(`Names starting with '${RESERVED_PREFIX}' are reserved`)
+    expect(error.stack).toContain(`${filename}:2\nconst \\u005f_$binding_getters = 1\n      ^`)
+    expect(declarations(`const ${escape}u0061 = 1`)).toEqual({ a: 'const' })
+  })
+
   it('rejects a hashbang because the generated prefix precedes the program', () => {
     expect(syntaxError('#!/usr/bin/env node\n1').stack).toBe(`${filename}:1\n#!/usr/bin/env node\n^\n\nSyntaxError: Hashbang lines are not supported`)
     expect(declarations('// #!/usr/bin/env node\nconst a = 1')).toEqual({ a: 'const' })
