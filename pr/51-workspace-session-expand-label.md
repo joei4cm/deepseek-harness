@@ -12,7 +12,7 @@
 
 - 展开按钮的计数改为本次点击实际揭示的批数 `Math.min(visible.hiddenCount, SESSION_WATERMARK_BASE)`：剩余多于五条时按钮显示「再展开 5 个会话」，剩余五条或更少时显示确切剩余数（该次点击一次显示全部）。点击行为、水位线语义、50 行自动上限与「收起」重置全部不变。
 - 中文文案「展开其余 {n} 个会话」改为「再展开 {n} 个会话」：批数语义下「其余 5 个」在剩余更多时仍会读成剩余总数；其余七种语言的模板（Show {n} more sessions 等）本就表达「再多显示 {n} 个」，无需改动。
-- README 双语同步：中文版两处按钮名引用（水位线段与动画段）改为**再展开**；英文版按钮文案未变，不改动。
+- README 双语同步：两处按钮名引用（水位线段与动画段）改为**再展开**；两份 README 明确按钮计数表示该次点击将显示的会话批数；`SESSION_WATERMARK_BASE` 注释记录它同时决定初始行数和每次展开批数。
 
 **GUI demonstration**: 未嵌入 GIF：上游不接受外部 PR，本描述仅暂存于 fork。英文侧栏在真实 Web 页面截图中显示 “Show 5 more sessions”，浏览器测试及三份侧栏 ARIA 预期覆盖该标签；中文文案由组件测试逐字断言。
 
@@ -42,8 +42,9 @@
 - 本机 `pnpm run test:gui`：834 文件 / 14763 用例通过（2 跳过）。
 - 本机 `DSH_SNAPSHOT=replay pnpm run test:web`：两次均未完成——首次在前端重建后串行重放约 90 分钟未到文件末尾（远超 CI 60 分钟作业预算），按决策点停止；第二次以 `test:web:built` 复用既有构建运行至会话终止、无最终汇总，已打印的失败均属无关规格（WebKit 用例与 ENOSPC 文件监视器耗尽等本机环境问题），无标签相关失败。该道仍待后续 CI 或其他环境验证，目前没有 PR 或 CI 结果。前端构建与浏览器冒烟阶段本身无报错退出。
 - 本机 `pnpm run lint`：通过。
-- 本机 `pnpm run typecheck`：5 项门禁通过；`pnpm run build:check` 通过。
+- 本机 `pnpm run test:docs`：21 项通过。
 - 本机 `pnpm run doc-sync`：41 项通过，2 项因上游已有问题失败：工具目录缺少 `tool-working-directory`，旧升级指南引用已删除的 `ptc-runtime-python` 包。
+- 文档补充提交 `be0a492a0a` 的推送钩子运行 typecheck：5 项门禁通过。
 - 本机 `DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/workspace-new-session-folding.e2e.ts --maxWorkers=2`：旧标签定位 2/2 超时；更新标签断言和三份 ARIA 预期后 2/2 通过。已查看使用隔离测试数据的实际英文页面截图，侧栏显示 “Show 5 more sessions”。
 - 本机临时 Chromium 场景：在隔离 Web 测试环境中加载 12 条会话并查看中文截图，依次显示「再展开 5 个会话」和「再展开 2 个会话」，点击后出现「收起」；初次尝试在设置更新时超时，移除该设置操作并通过浏览器语言选择中文后通过。
 - 本机 `pnpm run verify-translation-pairing --write packages/client/ui-workspace/README.md`：配对已重新记录。

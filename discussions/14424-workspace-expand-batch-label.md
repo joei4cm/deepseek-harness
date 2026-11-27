@@ -10,7 +10,7 @@ Your line numbers match master exactly, and we confirmed the mismatch. One piece
 
 **What we changed.** Our branch `fix/workspace-session-expand-label` takes your option 2, with one twist: instead of a fixed "5 more", the button now names the exact batch the click reveals — `Math.min(visible.hiddenCount, SESSION_WATERMARK_BASE)`. So twelve hidden reads "再展开 5 个会话" (and reveals exactly five), two hidden reads "再展开 2 个会话" (and reveals all two), which keeps the ≤5 jump honest the same way the old label was. The click behavior, the watermark semantics, the 50-row bound, and the collapse reset are untouched.
 
-**The Chinese copy.** With batch counts, the zh template 「展开其余 {n} 个会话」 still over-promises — 其余 says "the remaining", so "其余 5 个" reads as the remaining total when twenty remain. We changed it to 「再展开 {n} 个会话」. The other seven locales already say "show {n} more", so only zh moved. Both README references to the button name moved with it.
+**The Chinese copy.** With batch counts, the zh template 「展开其余 {n} 个会话」 still over-promises — 其余 says "the remaining", so "其余 5 个" reads as the remaining total when twenty remain. We changed it to 「再展开 {n} 个会话」. The other seven locales already say "show {n} more", so only zh moved. Both READMEs now name the batch the next click reveals.
 
 **What we did not take.** Option 1 (one click expands all) contradicts the documented contract and the pinned test, so it is a product decision rather than a bug fix; if maintainers prefer it, the click is a one-line change and the label can keep the total. We left it to them.
 
@@ -24,7 +24,7 @@ Evidence: the updated spec passes 124/124, and with master's sources restored th
 
 **我们改了什么。** 我们的分支 `fix/workspace-session-expand-label` 采用你的方案 2，带一处调整：按钮不再写固定的「5 个」，而是写出本次点击实际揭示的批数——`Math.min(visible.hiddenCount, SESSION_WATERMARK_BASE)`。于是隐藏十二条时读作「再展开 5 个会话」（点击恰好揭示五条），隐藏两条时读作「再展开 2 个会话」（一次显示全部两条），≤5 时的诚实性与旧标签一致。点击行为、水位线语义、50 行上限与收起重置全部未动。
 
-**中文文案。** 批数语义下，中文模板「展开其余 {n} 个会话」仍然过度承诺——「其余」说的是剩余全体，剩余二十条时「其余 5 个」会读成剩余总数。我们把它改为「再展开 {n} 个会话」。其余七种语言本来就写「show {n} more」，只有中文移动了。README 中两处按钮名引用也随之更新。
+**中文文案。** 批数语义下，中文模板「展开其余 {n} 个会话」仍然过度承诺——「其余」说的是剩余全体，剩余二十条时「其余 5 个」会读成剩余总数。我们把它改为「再展开 {n} 个会话」。其余七种语言本来就写「show {n} more」，只有中文移动了。两份 README 现已说明按钮计数表示下一次点击将显示的批数。
 
 **我们没有采用的。** 方案 1（一次展开全部）与文档化契约和被钉住的用例相矛盾，属于产品决定而非缺陷修复；若维护者倾向它，点击处理是一行改动，标签可以保留总数。我们把它留给维护者。
 
