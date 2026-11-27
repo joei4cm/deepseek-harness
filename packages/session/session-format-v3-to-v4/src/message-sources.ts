@@ -12,6 +12,11 @@ function describeSource(message: Readonly<Record<string, unknown>>): string {
   return isSessionFormatJsonObject(value) ? JSON.stringify(value).slice(0, SOURCE_EXCERPT_CHARS) : 'missing'
 }
 
+/** Event type and sequence for the admission diagnostic; the sequence is omitted when the row carries none. */
+function sourceLabel(type: string, seq: unknown): string {
+  return typeof seq === 'number' ? `${type} seq ${seq}` : type
+}
+
 function source(message: Readonly<Record<string, unknown>>, label: string): void {
   const value = message['source']
   if (!isSessionFormatJsonObject(value) || typeof value['kind'] !== 'string' || value['kind'].length === 0 || value['kind'] === 'plugin') {
@@ -25,7 +30,7 @@ function source(message: Readonly<Record<string, unknown>>, label: string): void
  */
 export function assertV4MessageSources(event: SessionFormatEvent): void {
   mapEventMessages(event, (message) => {
-    source(message, event.type)
+    source(message, sourceLabel(event.type, event.seq))
     return message
   })
 }
@@ -45,6 +50,6 @@ export function assertV4SourceRowAdmission(row: unknown): void {
   for (const message of messages) {
     if (!isSessionFormatJsonObject(message)) continue
     const value = message['source']
-    if (isSessionFormatJsonObject(value) && value['kind'] === 'plugin') source(message, String(row['type']))
+    if (isSessionFormatJsonObject(value) && value['kind'] === 'plugin') source(message, sourceLabel(String(row['type']), row['seq']))
   }
 }

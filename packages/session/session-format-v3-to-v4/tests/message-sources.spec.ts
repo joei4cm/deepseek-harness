@@ -41,15 +41,17 @@ describe('V4 source admission', () => {
     }
   })
 
-  it('names the event type and the observed source in the admission diagnostic', () => {
-    expect(() => { assertV4MessageSources(event(undefined)) }).toThrow('(user/message: missing)')
-    expect(() => { assertV4MessageSources(event({ kind: '' })) }).toThrow('(user/message: {"kind":""})')
+  it('names the event type, sequence, and observed source in the admission diagnostic', () => {
+    expect(() => { assertV4MessageSources(event(undefined)) }).toThrow('(user/message seq 0: missing)')
+    expect(() => { assertV4MessageSources(event({ kind: '' })) }).toThrow('(user/message seq 0: {"kind":""})')
+    const { seq: _omittedSeq, ...withoutSeq } = event(undefined)
+    expect(() => { assertV4MessageSources(withoutSeq as SessionFormatEvent) }).toThrow('(user/message: missing)')
   })
 
   it('reports the poisoned row type when the write path refuses a retired wrapper', () => {
     const row = { type: 'tool/result', seq: 0, time: 1, data: { message: event({ kind: 'plugin', plugin: 'stale-bundle' }).data } }
     expect(() => sessionFormatCatalog.encodeCurrentEvent(row as SessionFormatEvent))
-      .toThrow('(tool/result: {"kind":"plugin","plugin":"stale-bundle"})')
+      .toThrow('(tool/result seq 0: {"kind":"plugin","plugin":"stale-bundle"})')
   })
 
   it('rejects retired wrappers in every declared message slot before recovery can discard them', () => {
