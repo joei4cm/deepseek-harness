@@ -74,11 +74,13 @@ const PLUGIN_BUNDLE_PATH = /^\/plugins\//u
  * Forward local application requests to its authenticated Host, preserving streaming and cancellation.
  * Plugin bundle responses lose their `cache-control` for `no-store`: the Host marks them immutable
  * under a revision that changes every launch, so Chromium's disk cache would only accumulate bundles
- * no later launch can reuse.
+ * no later launch can reuse. A transport failure between the main process and the Host answers 502
+ * instead of rejecting: this handler proxies every renderer request, so an unhandled reset here
+ * reaches the fail-loud hook as an untracked crash even though it is one recoverable request.
  * @param request - Request from the application origin.
  * @param host - Owned Host URL.
  * @param cookie - Desktop-private credential carried in the Cookie header for the owned Host.
- * @returns Host response without connection-level headers.
+ * @returns Host response without connection-level headers, or 502 when the Host cannot be reached.
  */
 export async function forwardWebRequest(request: Request, host: string, cookie: string): Promise<Response> {
   const source = new URL(request.url)
@@ -91,7 +93,14 @@ export async function forwardWebRequest(request: Request, host: string, cookie: 
   for (const name of ['host', 'origin', 'cookie', 'sec-fetch-site']) headers.delete(name)
   headers.set('cookie', cookie)
   const init = { method: request.method, headers, body: request.body, signal: request.signal, duplex: 'half', redirect: 'manual' as const }
-  const response = await fetch(target, init)
+  let response: Response
+  try {
+    response = await fetch(target, init)
+  } catch (error) {
+    // A renderer-aborted request reports itself; other resets are one request's failure, not the app's.
+    if (!request.signal.aborted) console.error(`desktop: Host request ${request.method} ${source.pathname} failed`, error)
+    return new Response(null, { status: 502 })
+  }
   const outgoing = new Headers(response.headers)
   for (const name of WITHHELD_RESPONSE_HEADERS) outgoing.delete(name)
   if (PLUGIN_BUNDLE_PATH.test(source.pathname)) outgoing.set('cache-control', 'no-store')

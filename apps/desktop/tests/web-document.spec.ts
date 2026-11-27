@@ -7,6 +7,7 @@ import { forwardWebRequest, removeLegacyHostCookies, serveWebDocument } from '..
 const roots: string[] = []
 afterEach(async () => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
@@ -72,6 +73,29 @@ it('replaces the immutable cache header of plugin bundles with no-store and leav
   expect(chunk.headers.get('cache-control')).toBe('no-store')
   const asset = await forwardWebRequest(new Request('dsh-app://app/api/plugins/list'), 'http://127.0.0.1:1234/', 'c')
   expect(asset.headers.get('cache-control')).toBe(immutable)
+})
+
+it('answers a transport failure as 502 instead of rejecting through the protocol handler', async () => {
+  const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed', { cause: new Error('read ECONNRESET') }))
+  vi.stubGlobal('fetch', fetch)
+  const report = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  const request = new Request('dsh-app://app/api/read')
+  const response = await forwardWebRequest(request, 'http://127.0.0.1:1234/', 'session=owned')
+  // One reset connection is one request's failure; the fail-loud hook must not see a rejection.
+  expect(response.status).toBe(502)
+  expect(report).toHaveBeenCalled()
+})
+
+it('does not log the transport failure of a request the renderer already aborted', async () => {
+  const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed', { cause: new Error('read ECONNRESET') }))
+  vi.stubGlobal('fetch', fetch)
+  const report = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  const controller = new AbortController()
+  const request = new Request('dsh-app://app/api/read', { signal: controller.signal })
+  controller.abort()
+  const response = await forwardWebRequest(request, 'http://127.0.0.1:1234/', 'session=owned')
+  expect(response.status).toBe(502)
+  expect(report).not.toHaveBeenCalled()
 })
 
 it('refuses another page origin without forwarding its request', async () => {
