@@ -367,3 +367,73 @@ it('describes an entry whose required field only the profile supplies, and repor
   const failures = (): unknown[] => restored.logger.buffer.filter(message => message.type === 'error').map((message): unknown => message.args[0])
   await vi.waitFor(() => { expect(failures()).toContainEqual(expect.objectContaining({ message: 'refresh failed' })) })
 })
+
+it('preserves undeclared keys under a volatile root object schema across edits and reset', async () => {
+  const schema = z.object({
+    ordinary: z.string().default('fixed'),
+    count: z.number().default(2),
+    nested: z.object({ live: z.number().default(1) }).default({ live: 1 }),
+  }).volatile()
+  const { ctx, profile } = await fixture({ schema, hmr: false })
+  const readFirstConfig = (): Record<string, unknown> => (
+    parse(readFileSync(profile.patchPath, 'utf8')) as Array<{ id: string; config: Record<string, unknown> }>
+  ).find(row => row.id === 'first')!.config
+  writeFileSync(profile.patchPath, JSON.stringify([{
+    id: 'first',
+    config: { ordinary: 'fixed', count: 3, extra: 'keep', nested: { live: 2, nestedExtra: 'keep-nested' } },
+  }]))
+  await ctx.settings.update('first', { count: 9 })
+  expect(readFirstConfig()).toMatchObject({ count: 9, extra: 'keep', nested: { live: 2, nestedExtra: 'keep-nested' } })
+  await ctx.settings.mutate('first', [{ op: 'set', path: ['nested', 'live'], value: 4 }])
+  expect(readFirstConfig()).toMatchObject({ count: 9, extra: 'keep', nested: { live: 4, nestedExtra: 'keep-nested' } })
+  await ctx.settings.replace('first', {})
+  expect(readFirstConfig()).toMatchObject({ extra: 'keep', nested: { nestedExtra: 'keep-nested' } })
+})
+
+it('preserves undeclared keys in a nested volatile object while replacing expressions and empty objects cleanly', async () => {
+  const schema = z.object({
+    ordinary: z.string(),
+    nested: z.object({ live: z.number().default(1) }).volatile(),
+  })
+  const { ctx, profile } = await fixture({ schema, hmr: false })
+  writeFileSync(profile.patchPath, JSON.stringify([{
+    id: 'first',
+    config: { ordinary: 'fixed', nested: { live: 2, extra: 'keep' } },
+  }]))
+  await ctx.settings.update('first', { nested: { live: 5 } })
+  expect(parse(readFileSync(profile.patchPath, 'utf8'))).toContainEqual(expect.objectContaining({
+    id: 'first',
+    config: { ordinary: 'fixed', nested: { live: 5, extra: 'keep' } },
+  }))
+  // Without undeclared keys, resetting a nested volatile object removes the container rather than leaving `{}`.
+  writeFileSync(profile.patchPath, JSON.stringify([{
+    id: 'first',
+    config: { ordinary: 'fixed', token: 'private', nested: { live: 2 } },
+  }]))
+  await ctx.settings.replace('first', {})
+  expect(parse(readFileSync(profile.patchPath, 'utf8'))).toEqual([])
+  // A `!!js` expression at a volatile object path is replaced whole rather than merged as an undeclared `__jsExpr` key.
+  writeFileSync(profile.patchPath, '- id: first\n  config:\n    ordinary: fixed\n    nested: !!js "({ live: 2 })"\n')
+  await ctx.settings.mutate('first', [{ op: 'set', path: ['nested'], value: { live: 7 } }])
+  expect(parse(readFileSync(profile.patchPath, 'utf8'))).toContainEqual(expect.objectContaining({
+    id: 'first',
+    config: { ordinary: 'fixed', nested: { live: 7 } },
+  }))
+})
+
+it('strips non-object volatile roots whole and preserves undeclared keys on a fieldless volatile object root', async () => {
+  const dict = await fixture({ schema: z.dict(z.string()).volatile(), hmr: false })
+  await dict.ctx.settings.update('first', { a: 'one', b: 'two' })
+  await dict.ctx.settings.mutate('first', [{ op: 'unset', path: ['a'] }])
+  const dictConfig = (parse(readFileSync(dict.profile.patchPath, 'utf8')) as Array<{ id: string; config: Record<string, unknown> }>)
+    .find(row => row.id === 'first')!.config
+  expect(dictConfig).toMatchObject({ b: 'two' })
+  expect(dictConfig).not.toHaveProperty('a')
+  const fieldless = await fixture({ schema: new z({ type: 'object' }).volatile(), hmr: false })
+  writeFileSync(fieldless.profile.patchPath, JSON.stringify([{ id: 'first', config: { ordinary: 'fixed', extra: 'keep' } }]))
+  await fieldless.ctx.settings.update('first', {})
+  expect(parse(readFileSync(fieldless.profile.patchPath, 'utf8'))).toContainEqual(expect.objectContaining({
+    id: 'first',
+    config: { ordinary: 'fixed', extra: 'keep' },
+  }))
+})

@@ -9,7 +9,7 @@ import { interpolate, type Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-config-editor'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import { redactSecrets, type RedactedSecret } from './redact.ts'
-import { isVolatilePath, plainConfig, projectForm, volatileForm } from './schema.ts'
+import { isExpression, isVolatilePath, plainConfig, projectForm, volatileForm } from './schema.ts'
 import type { SettingsNamespace } from './types.ts'
 
 export { redactSecrets } from './redact.ts'
@@ -409,12 +409,17 @@ export class SettingsForms extends Service {
       }
       validatePaths(next, form)
       const strip = (value: Record<string, unknown>, node: z, path: string[] = []): Record<string, unknown> => {
-        if (isVolatilePath(schema, path)) return {}
+        if (isExpression(value) || node.type !== 'object') return {}
         const result = { ...value }
-        for (const [key, field] of Object.entries(node.dict as Record<string, z>)) {
+        for (const [key, field] of Object.entries(node.dict ?? {})) {
           const target = [...path, key]
-          if (isVolatilePath(schema, target)) Reflect.deleteProperty(result, key)
-          else if (isPlainObject(result[key])) result[key] = strip(result[key], field, target)
+          if (isPlainObject(result[key]) && !isExpression(result[key]) && field.type === 'object') {
+            const remaining = strip(result[key], field, target)
+            if (Object.keys(remaining).length === 0) Reflect.deleteProperty(result, key)
+            else result[key] = remaining
+          } else if (isVolatilePath(schema, target)) {
+            Reflect.deleteProperty(result, key)
+          }
         }
         return result
       }

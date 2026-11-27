@@ -46,8 +46,11 @@ export function volatileForm(schema: z): z | undefined {
   return undefined
 }
 
-/** Whether a raw config node is an unevaluated `!!js` expression, kept whole rather than projected field by field. */
-function isExpression(value: object): boolean {
+/** Whether a raw config node is an unevaluated `!!js` expression, kept whole rather than projected field by field.
+ * @param value Candidate raw config object.
+ * @returns Whether the object carries only the serialized expression marker.
+ */
+export function isExpression(value: object): boolean {
   return Object.keys(value).length === 1 && typeof Reflect.get(value, '__jsExpr') === 'string'
 }
 
