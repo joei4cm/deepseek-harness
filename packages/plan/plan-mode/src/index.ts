@@ -8,7 +8,8 @@
  *
  * The `plan` projection folds the session log, so resume and fork restore the
  * state. User selections remain pending until the next accepted in-turn
- * pre-step. The service includes the selected state in the proposed step
+ * pre-step; a `/plan` selection is recorded in the log and survives a
+ * restart. The service includes the selected state in the proposed step
  * assembly, then appends `plan/mode` from `agent/pre-step` only when the step
  * is accepted. Same-step request retries reuse their assembly.
  *
@@ -182,6 +183,10 @@ export class PlanModeController extends Service {
    * Latest selection per session awaiting the next accepted in-turn pre-step.
    * `narrate` is true for user selections and false for the exit tool, whose
    * result already narrates the transition.
+   *
+   * A user selection is recorded in the log by the `plan` command lifecycle as
+   * well, so a restored session recovers it from the projection; this map
+   * holds the exit tool's selection, which no command record covers.
    */
   private readonly pendingIntents = new WeakMap<Session, { active: boolean; narrate: boolean }>()
 
@@ -198,7 +203,7 @@ export class PlanModeController extends Service {
       order: ctx.systemPrompt.getSectionOrder('PLAN_POLICY'),
       text: (context) => {
         if (context.agent === undefined) return ''
-        const pending = this.pendingIntents.get(context.agent.session)
+        const pending = this.pendingIntent(context.agent.session)
         const state = this.planState(context.agent.session)
         return state.entered || pending?.active === true
           ? `The following instructions apply only while plan mode is active.\n\n${this.section}`
@@ -213,7 +218,7 @@ export class PlanModeController extends Service {
       text: (context) => {
         if (context.agent === undefined) return ''
         const state = this.planState(context.agent.session)
-        const active = this.pendingIntents.get(context.agent.session)?.active ?? state.active
+        const active = this.pendingIntent(context.agent.session)?.active ?? state.active
         if (!state.entered && !active) return ''
         return active
           ? 'Plan mode is active. Follow the plan-mode instructions.'
@@ -404,9 +409,45 @@ export class PlanModeController extends Service {
     return this.planState(session).active
   }
 
+  /**
+   * The pending selection for one session: the in-memory intent, or the
+   * durable record of a logged `/plan` selection that never reached
+   * `plan/mode`.
+   *
+   * The projection derives the durable record from the command lifecycle: a
+   * successful `/plan` command whose target differs from the logged mode and
+   * that no later `plan/mode` recorded. A restored Session rehydrates that
+   * record, so a selection queued before a crash still applies at the next
+   * accepted in-turn pre-step instead of being dropped with the process.
+   *
+   * @param session - Session whose pending selection is read.
+   * @returns The pending selection, or `undefined` when none is outstanding.
+   */
+  private pendingIntent(session: Session): { active: boolean; narrate: boolean } | undefined {
+    const intent = this.pendingIntents.get(session)
+    if (intent !== undefined) return intent
+    const wanted = this.planState(session).wanted
+    return wanted === null ? undefined : { active: wanted, narrate: true }
+  }
+
+  /**
+   * Clear the durable record of a cancelled selection.
+   *
+   * The record lives in the session log, so cancelling it takes a log write:
+   * re-affirming the mode already in force appends `plan/mode` with that
+   * value, which the projection folds as the committed state and clears the
+   * outstanding candidate. A later restore then finds no selection to apply.
+   *
+   * @param session - Session whose durable selection record is cleared.
+   */
+  private clearDurableSelection(session: Session): void {
+    if (this.planState(session).wanted === null) return
+    session.append('plan/mode', { active: this.loggedActive(session) })
+  }
+
   /** The state a proposed step presents: a pending selection, else the logged state. */
   private selectedActive(session: Session): boolean {
-    return this.pendingIntents.get(session)?.active ?? this.loggedActive(session)
+    return this.pendingIntent(session)?.active ?? this.loggedActive(session)
   }
 
   private hasOpenTurn(session: Session): boolean {
@@ -429,7 +470,7 @@ export class PlanModeController extends Service {
    */
   get(agent: Agent): { active: boolean; pending?: boolean } {
     const active = this.loggedActive(agent.session)
-    const pending = this.pendingIntents.get(agent.session)
+    const pending = this.pendingIntent(agent.session)
     return pending === undefined ? { active } : { active, pending: pending.active }
   }
 
@@ -452,7 +493,7 @@ export class PlanModeController extends Service {
    */
   set(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'noop' {
     const session = agent.session
-    const pending = this.pendingIntents.get(session)
+    const pending = this.pendingIntent(session)
     const target = pending?.active ?? this.loggedActive(session)
     if (active === target) return 'noop'
     if (this.hasOpenTurn(session)) {
@@ -463,6 +504,7 @@ export class PlanModeController extends Service {
     // failed durable write leaves the selection retryable, not dropped.
     if (active === this.loggedActive(session)) {
       this.pendingIntents.delete(session)
+      this.clearDurableSelection(session)
       return 'cancelled'
     }
     session.append('plan/mode', { active })
@@ -473,10 +515,12 @@ export class PlanModeController extends Service {
 
   /** Commit a pending transition and return its notice for user selections. */
   private onBoundary(session: Session): UserMessage | undefined {
-    const pending = this.pendingIntents.get(session)
+    const pending = this.pendingIntent(session)
     if (pending === undefined) return
     const target = pending.active
     if (target === this.loggedActive(session)) {
+      // A selection the user cancelled: drop it and clear its durable record.
+      this.clearDurableSelection(session)
       this.pendingIntents.delete(session)
       return
     }

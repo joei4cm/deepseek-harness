@@ -185,7 +185,7 @@ The first entry into plan mode adds the exit tool through the route’s tool-upd
 These limits describe when plan mode does not behave as you might expect or needs extra care. They are current package constraints, not a roadmap.
 
 - **Guidance, not enforcement** — plan mode restrains through text only; deployments that need enforced restrictions configure sandbox mode and approval policy independently.
-- **Pending selections are process-local** — a selection made after the turn's final accepted pre-step is lost if the process exits before another accepted in-turn pre-step; the UI must reapply it.
+- **The exit tool's pending exit is process-local** — an approved review records the exit in memory for the next accepted in-turn pre-step, so it is lost if the process exits before that pre-step. A `/plan` or `/plan off` selection is recorded in the session log and survives a restart.
 - **No creation-time plan option** — forked agents inherit logged plan state, while newly spawned agents begin inactive.
 - **Subagents cannot open the review** — a Session with subagent origin fails the `exit_plan_mode` call and is told to include the unresolved decision in its final result; historical ordinary forks can open the review despite retained parent metadata.
 - **One specialized review renderer** — only the Web UI has a `plan-review` presentation; another interaction provider presents the same request through its generic option flow.

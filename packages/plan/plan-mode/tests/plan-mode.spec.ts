@@ -18,6 +18,7 @@ import UserQuestionService, {
   UserQuestionError, type AskUserQuestionAnswer, type AskUserQuestionRequest,
 } from '@deepseek-ai/dsh-user-questions'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
+import type { CommandId } from '@deepseek-ai/dsh-commands'
 import { PtcInspectableValue, PtcRuntime, type PtcRunRequest, type PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import PlanModeController, { EXIT_PLAN_MODE, planProjectionDefinition, resolveConfig } from '../src/index.ts'
@@ -793,6 +794,78 @@ describe('/plan', () => {
     await fiber.dispose()
 
     expect(ctx.commands.list(agent)).toEqual([])
+  })
+})
+
+describe('a restored session', () => {
+  /**
+   * Seed the durable record of a `/plan off` selection that never reached
+   * `plan/mode`: the command lifecycle ran, the queued selection did not.
+   */
+  function seedQueuedExit(agent: Agent & { session: Session }): void {
+    agent.session.append('plan/mode', { active: true })
+    const commandId = brandString<CommandId>('restored-plan-command')
+    agent.session.append('command/run', { commandId, name: 'plan', args: ' off', source: { kind: 'user' } })
+    agent.session.append('command/done', { commandId, kind: 'success', text: 'Plan mode off.' })
+  }
+
+  it('rehydrates a queued selection from the logged command and applies it at the next pre-step', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx, 'restored-queued-exit')
+    seedQueuedExit(agent)
+
+    expect(ctx.planMode.get(agent)).toEqual({ active: true, pending: false })
+    await boundary(ctx, agent, 'pre-step')
+    expect(foldPlanMode(agent.session.snapshotEvents())).toBe(false)
+    expect(noticeTexts(agent.session)).toEqual(['The user switched this session back to the default mode.'])
+    expect(ctx.planMode.get(agent)).toEqual({ active: false })
+  })
+
+  it('reports the rehydrated selection in the plan status', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx, 'restored-queued-status')
+    seedQueuedExit(agent)
+
+    const assembled = await assembleFor(ctx, agent)
+    expect(assembled.sections.find(section => section.name === 'plan:status')?.text)
+      .toBe('Plan mode is inactive. The plan-mode instructions no longer apply.')
+  })
+
+  it('keeps a rehydrated exit pending when the user repeats /plan off', async () => {
+    const ctx = await setup()
+    await ctx.plugin(CommandRuntime)
+    await new Promise(resolve => setImmediate(resolve))
+    const agent = await agentWithSession(ctx, 'restored-repeated-exit')
+    seedQueuedExit(agent)
+
+    const signal = new AbortController().signal
+    expect((await ctx.commands.execute(agent, '/plan off', [], signal))?.result)
+      .toEqual({ kind: 'success', text: 'Leaving plan mode (applies from the next step).' })
+    await boundary(ctx, agent, 'pre-step')
+    expect(foldPlanMode(agent.session.snapshotEvents())).toBe(false)
+  })
+
+  it('clears a rehydrated selection that the user cancels', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx, 'restored-cancelled-exit')
+    seedQueuedExit(agent)
+
+    expect(ctx.planMode.set(agent, true)).toBe('cancelled')
+    await boundary(ctx, agent, 'pre-step')
+    await boundary(ctx, agent, 'pre-step')
+    expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
+    expect(noticeTexts(agent.session)).toEqual([])
+  })
+
+  it('leaves a session without a logged selection unchanged', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx, 'restored-without-selection')
+    agent.session.append('plan/mode', { active: true })
+
+    expect(ctx.planMode.get(agent)).toEqual({ active: true })
+    await boundary(ctx, agent, 'pre-step')
+    expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
+    expect(noticeTexts(agent.session)).toEqual([])
   })
 })
 
