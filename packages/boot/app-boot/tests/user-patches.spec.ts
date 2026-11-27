@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterAll, afterEach, describe, expect, it, onTestFinished } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -18,8 +18,11 @@ import {
   loadOverlayPatches,
   PROFILE_PATCH_FILENAME,
   reconcileProfilePatches,
+  recomposeProfile,
+  ResolutionRestartRequired,
   StartupError,
 } from '../src/index.ts'
+import type { PluginPackages } from '../src/profile-resolution/service.ts'
 
 const NAME = 'dsh-test-bin'
 
@@ -375,6 +378,59 @@ describe('profile reconciliation settlement', () => {
     // A Loader without the pinned root id is no better.
     await ctx.plugin(Loader)
     await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('profile reload requires the root Include entry')
+  })
+
+  it('recomposes through the loader-carried marker when the caller never saw the mount', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'))
+    onTestFinished(() => ctx.fiber.dispose())
+    // A second copy of this module — as a profile plugin resolved against a
+    // different module base would import — shares the loader but none of the
+    // module state, so its context-keyed Include record is empty.
+    vi.resetModules()
+    const copy = await import('../src/index.ts')
+    await expect(copy.reconcileProfilePatches(ctx, [], NAME)).resolves.toEqual([])
+    await expect(reconcileProfilePatches(ctx, [], NAME)).resolves.toEqual([])
+    vi.resetModules()
+  })
+
+  it('recomputes a structurally matching resolution and reads a restart by its error name', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'))
+    onTestFinished(() => ctx.fiber.dispose())
+    const installed = { profilesDir: '/p', profileDir: undefined, localPackageNames: [], entries: [], linkedRoots: [] }
+    const successor = { ...installed, localPackageNames: ['addon'] }
+    // A resolution published by another module instance recomputes through
+    // its own method shape; a plain-data one keeps the reconcile-only path.
+    const resolutions: Array<Record<string, unknown>> = [
+      { ...installed, computeLatestResolution: () => Promise.resolve(successor) },
+      installed,
+    ]
+    let thrown: unknown = Object.assign(new Error('kept mapping moved'), { name: 'ResolutionRestartRequired' })
+    ctx.provide('pluginPackages', {
+      packageOf: () => undefined,
+      get resolution() { return resolutions[0] },
+      replace(next: unknown) { resolutions[0] = next as Record<string, unknown>; throw thrown },
+    } as Pick<PluginPackages, 'packageOf' | 'resolution' | 'replace'> as PluginPackages)
+    await expect(recomposeProfile(ctx, [], NAME)).resolves.toEqual({ warnings: [], restartReason: 'package-moved' })
+    // A restart signal the caller's own copy throws reads the same.
+    thrown = new ResolutionRestartRequired('kept mapping moved')
+    resolutions[0] = { ...installed, computeLatestResolution: () => Promise.resolve(successor) }
+    await expect(recomposeProfile(ctx, [], NAME)).resolves.toEqual({ warnings: [], restartReason: 'package-moved' })
+    // The plain-data resolution skips recomposition and accepts the publication.
+    await expect(recomposeProfile(ctx, [], NAME)).resolves.toEqual({ warnings: [] })
+    // A publication failure that is no restart signal is rethrown.
+    const other = new Error('publication failed')
+    thrown = other
+    resolutions[0] = { ...installed, computeLatestResolution: () => Promise.resolve(successor) }
+    await expect(recomposeProfile(ctx, [], NAME)).rejects.toBe(other)
+    // A rejected value that is no error at all is rethrown as it is.
+    const foreign = { reason: 'publication failed' }
+    thrown = foreign
+    resolutions[0] = { ...installed, computeLatestResolution: () => Promise.resolve(successor) }
+    await expect(recomposeProfile(ctx, [], NAME)).rejects.toBe(foreign)
   })
 
   it('removes a previously failed entry without reporting its old activation error', async () => {

@@ -26,10 +26,12 @@ const tmp = (): string => {
 }
 
 
-/** Give a fake Loader the root group that the startup audit reads for rejected options. */
+/** Give a fake Loader the root group that the startup audit reads for rejected options, and the store accessor a real context has. */
 function withRoot(ctx: Context, rows: unknown[] = []): Context {
   const root = { data: rows, getOuterStack: () => [] }
-  Object.assign(ctx.loader, { root })
+  const loader = ctx.loader
+  Object.assign(loader, { root })
+  Object.assign(ctx, { get: (name: string) => name === 'loader' ? loader : undefined })
   return ctx
 }
 describe('resolveConfigPath', () => {

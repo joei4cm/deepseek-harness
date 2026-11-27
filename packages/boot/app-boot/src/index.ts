@@ -28,7 +28,7 @@ export {
   setProfileVersionExemption, validatePluginVersionExemption, type ProfileCompatibility,
 } from './profile-compatibility.ts'
 import { prepareProfilePatches } from './compatibility-preflight.ts'
-import { ProfileRuntimeResolution, type RuntimeResolution } from './profile.ts'
+import { type RuntimeResolution } from './profile.ts'
 import { ResolutionRestartRequired } from './profile-resolution/resolver.ts'
 export { prepareProfileEntries, prepareProfilePatches } from './compatibility-preflight.ts'
 export { readPluginMeta, resolvePluginResource } from './package-meta.ts'
@@ -279,7 +279,64 @@ export function loadLayeredEnv(
   ])
 }
 
+/**
+ * The Include entry each context booted. A caller that imported a second
+ * instance of this module — for example a profile plugin resolved against a
+ * different module base — shares the Loader but none of this module state, so
+ * {@link mountRootInclude} also marks the root include on the loader service
+ * itself under a globally shared key.
+ */
 const bootstrapIncludes = new WeakMap<Context, Entry>()
+
+/** Loader property under which {@link mountRootInclude} leaves the root Include entry. */
+const BOOTSTRAP_INCLUDE_KEY = Symbol.for('@deepseek-ai/dsh-app-boot/bootstrapIncludes')
+
+/** A Loader that recorded the root Include entry it mounted. */
+interface BootstrapIncludeCarrier {
+  [BOOTSTRAP_INCLUDE_KEY]?: Entry
+}
+
+/**
+ * The root Include entry mounted for this context's Loader, when one exists.
+ * The context-keyed record answers a same-instance caller; the loader-carried
+ * marker answers a caller whose module instance never saw the mount.
+ *
+ * @param ctx - context whose loader's root Include is needed.
+ * @returns the mounted root Include entry, or `undefined` when none exists.
+ */
+function bootstrapIncludeOf(ctx: Context): Entry | undefined {
+  const recorded = bootstrapIncludes.get(ctx)
+  if (recorded !== undefined) return recorded
+  // A second module instance shares the loader service but not this module's
+  // record, so the root Include is read from the loader itself.
+  const loader = ctx.get('loader') as BootstrapIncludeCarrier | undefined
+  return loader?.[BOOTSTRAP_INCLUDE_KEY]
+}
+
+/**
+ * Whether a published runtime resolution can compute its latest generation.
+ * A second module instance's `ProfileRuntimeResolution` does not satisfy an
+ * `instanceof` check here, so the structural method decides.
+ *
+ * @param value - the resolution a caller published.
+ * @returns true when the value offers `computeLatestResolution`.
+ */
+function isRecomputableResolution(value: RuntimeResolution): value is RuntimeResolution & {
+  computeLatestResolution: () => Promise<RuntimeResolution>
+} {
+  return typeof (value as { computeLatestResolution?: unknown }).computeLatestResolution === 'function'
+}
+
+/**
+ * Whether a publication rejection is a restart-required signal from any
+ * instance of this module.
+ *
+ * @param error - the value `pluginPackages.replace` rejected with.
+ * @returns true for a `ResolutionRestartRequired`, including one another module instance threw.
+ */
+function isRestartRequiredError(error: unknown): boolean {
+  return error instanceof ResolutionRestartRequired || (error instanceof Error && error.name === 'ResolutionRestartRequired')
+}
 
 /** What a caller of {@link recomposeProfile} already did and requires. */
 export interface ProfileRecompositionOptions {
@@ -347,7 +404,7 @@ async function recompose(
   // The rows stopped first, which a failure before the generation applies puts back.
   let stopped: StoppedRow[] = []
   try {
-    const entry = bootstrapIncludes.get(ctx)
+    const entry = bootstrapIncludeOf(ctx)
     if (entry === undefined) throw new Error(`${binName}: profile reload requires the root Include entry`)
     // Reading the prior state imports nothing, so plugin code does not run before the next resolution publishes.
     const previousFailures = (await inactiveEntries(ctx, false)).map((failure): RecordedFailure => ({
@@ -361,7 +418,7 @@ async function recompose(
     const { patches: previous = [], ...includeConfig } = entry.options.config as Include.Config
     const current = withResolution ? ctx.get('pluginPackages')?.resolution : undefined
     // A plain-data resolution has no inputs to recompute from.
-    const successor = current instanceof ProfileRuntimeResolution ? await current.computeLatestResolution() : undefined
+    const successor = current !== undefined && isRecomputableResolution(current) ? await current.computeLatestResolution() : undefined
     if (successor !== undefined) {
       // Rows the generation no longer lists stop, and their disposal finishes, while their packages are still mapped.
       const listed = rowIds(structuredClone(patches))
@@ -391,7 +448,7 @@ async function recompose(
       try {
         publish(ctx, successor)
       } catch (error) {
-        if (!(error instanceof ResolutionRestartRequired)) throw error
+        if (!isRestartRequiredError(error)) throw error
         // The generation waits for the mappings the rejected publication would change.
         return { warnings: [], restartReason: 'package-moved' }
       }
@@ -803,6 +860,9 @@ export async function mountRootInclude(
   if (loader === undefined) return undefined
   const entry = loader.resolve(includeId)
   bootstrapIncludes.set(ctx, entry)
+  // A second module instance shares this loader but not the WeakMap, so its
+  // reload callers find the root include through the loader itself.
+  Reflect.set(loader as BootstrapIncludeCarrier, BOOTSTRAP_INCLUDE_KEY, entry)
   return entry
 }
 
@@ -1223,7 +1283,7 @@ export async function auditStartupEntries(
   warn: (line: string) => void = line => void process.stderr.write(line),
 ): Promise<void> {
   const failures = await inactiveEntries(ctx)
-  const required = new Set(failures.filter(failure => (failure.entry !== undefined && failure.entry === bootstrapIncludes.get(ctx))
+  const required = new Set(failures.filter(failure => (failure.entry !== undefined && failure.entry === bootstrapIncludeOf(ctx))
     || requiredStartupEntryIds.has(failure.id)))
   if (required.size > 0) {
     throw new StartupError(startupDiagnostic(binName, failures, required), failures.map(failure => ({
