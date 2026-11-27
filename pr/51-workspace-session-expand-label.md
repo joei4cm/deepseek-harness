@@ -14,7 +14,7 @@
 - 中文文案「展开其余 {n} 个会话」改为「再展开 {n} 个会话」：批数语义下「其余 5 个」在剩余更多时仍会读成剩余总数；其余七种语言的模板（Show {n} more sessions 等）本就表达「再多显示 {n} 个」，无需改动。
 - README 双语同步：中文版两处按钮名引用（水位线段与动画段）改为**再展开**；英文版按钮文案未变，不改动。
 
-**GUI demonstration**: 未嵌入 GIF。改动是侧栏一个按钮的计数来源与一个语言字符串，无布局、交互或状态变化；渲染结果由 client spec 对渲染后按钮名的逐字断言覆盖，且仓库内没有浏览器快照钉住该字符串（已检索 `apps/web` e2e 与 `snapshots/`）。按 record-browser-gif 的要求在此声明不附 GIF 的原因：上游不接受外部 PR，本描述仅暂存于 fork，没有可附着的 PR 正文。
+**GUI demonstration**: 未嵌入 GIF：上游不接受外部 PR，本描述仅暂存于 fork。英文侧栏在真实 Web 页面截图中显示 “Show 5 more sessions”，浏览器测试及三份侧栏 ARIA 预期覆盖该标签；中文文案由组件测试逐字断言。
 
 **Translation disclosure**: 中文「其余 → 再」是让文案与步进语义一致的翻译正确性修正，按惯例声明：文案正确性属于人工翻译评审项，词典键集完备性由 `satisfies Record<keyof typeof en, string>` 编译期保证。
 
@@ -33,7 +33,7 @@
 | 双工作区同时折叠（两按钮标签同值） | 标签不同（12/6），可按名称区分 | 同名，按所在分节定位 | 「keeps each Workspace batch limit independent」改用 `within(section)` 定位 |
 | 步进行为、≤5 一次显示全部、收起重置、50 行自动上限 | 不变 | 不变 | 既有用例 |
 
-**Existing test behavior**: 按钮文案是既有用例断言的行为；本 PR 按新语义更新 14 处标签断言与一处内联快照，并把按名称区分双按钮的一处查询改为按分节定位。步进行为的断言全部原样保留。
+**Existing test behavior**: 按钮现在显示单次点击展开的数量，所以组件测试和浏览器测试的按钮名断言及三份侧栏 ARIA 预期随之更新。两个工作区按钮同名时，组件测试按分节定位。展开行数与收起行为的断言保持不变。
 
 **Test entries**:
 
@@ -44,7 +44,7 @@
 - 本机 `pnpm run lint`：通过。
 - 本机 `pnpm run typecheck`：5 项门禁通过；`pnpm run build:check` 通过。
 - 本机 `pnpm run doc-sync`：41 项通过，2 项因上游已有问题失败：工具目录缺少 `tool-working-directory`，旧升级指南引用已删除的 `ptc-runtime-python` 包。
-- 实际页面目视检查尚未完成；自动化组件断言不能替代该检查。
+- 本机 `DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/workspace-new-session-folding.e2e.ts --maxWorkers=2`：旧标签定位 2/2 超时；更新标签断言和三份 ARIA 预期后 2/2 通过。已查看真实英文页面截图，侧栏显示 “Show 5 more sessions”。中文未在浏览器中目视检查。
 - 本机 `pnpm run verify-translation-pairing --write packages/client/ui-workspace/README.md`：配对已重新记录。
 
 ## AI Usage
