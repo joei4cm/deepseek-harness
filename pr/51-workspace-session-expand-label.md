@@ -44,7 +44,8 @@
 - 本机 `pnpm run lint`：通过。
 - 本机 `pnpm run typecheck`：5 项门禁通过；`pnpm run build:check` 通过。
 - 本机 `pnpm run doc-sync`：41 项通过，2 项因上游已有问题失败：工具目录缺少 `tool-working-directory`，旧升级指南引用已删除的 `ptc-runtime-python` 包。
-- 本机 `DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/workspace-new-session-folding.e2e.ts --maxWorkers=2`：旧标签定位 2/2 超时；更新标签断言和三份 ARIA 预期后 2/2 通过。已查看真实英文页面截图，侧栏显示 “Show 5 more sessions”。中文未在浏览器中目视检查。
+- 本机 `DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/workspace-new-session-folding.e2e.ts --maxWorkers=2`：旧标签定位 2/2 超时；更新标签断言和三份 ARIA 预期后 2/2 通过。已查看使用隔离测试数据的实际英文页面截图，侧栏显示 “Show 5 more sessions”。
+- 本机临时 Chromium 场景：在隔离 Web 测试环境中加载 12 条会话并查看中文截图，依次显示「再展开 5 个会话」和「再展开 2 个会话」，点击后出现「收起」；初次尝试在设置更新时超时，移除该设置操作并通过浏览器语言选择中文后通过。
 - 本机 `pnpm run verify-translation-pairing --write packages/client/ui-workspace/README.md`：配对已重新记录。
 
 ## AI Usage
