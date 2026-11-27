@@ -32,6 +32,7 @@ import { toolErrorMessage } from '@deepseek-ai/dsh-tools/pipeline'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { PtcCalls } from './ptc-calls.ts'
 import { CodeRunFailedError, ToolCallLimitExceededError } from './errors.ts'
+import { releaseRetainedOnArchive } from './archive-release.ts'
 import { substituteProgramImages } from './program-images.ts'
 import type { Config } from './config.ts'
 import type { RunCodeToolOptions } from './run-code.ts'
@@ -259,7 +260,7 @@ export function createRunCodeTransport(
     if (image === undefined) throw new Error('Image storage must expose a readable path in the program filesystem')
     return image
   }
-  const stateOwners = new WeakMap<object, WeakSet<PtcRuntime>>()
+  const stateOwners = new WeakMap<object, Set<PtcRuntime>>()
   const definition = defineTool({
     name: toolName,
     // Getters below project the current program format; argument validation uses this static spec.
@@ -654,8 +655,8 @@ export function createRunCodeTransport(
           try {
             if (exec.agent !== undefined) {
               const agent = exec.agent
-              let runtimes = stateOwners.get(agent)
-              if (runtimes === undefined) stateOwners.set(agent, runtimes = new WeakSet())
+              let retained = stateOwners.get(agent)
+              if (retained === undefined) stateOwners.set(agent, retained = new Set())
               // Cordis can wrap service returns repeatedly; cleanup belongs to the original provider.
               let provider: PtcRuntime = runtime
               for (;;) {
@@ -663,9 +664,13 @@ export function createRunCodeTransport(
                 if (original === undefined) break
                 provider = original
               }
-              if (!runtimes.has(provider)) {
-                agent.ctx.effect(() => () => runtime.release(agent), 'PTC retained environment')
-                runtimes.add(provider)
+              if (!retained.has(provider)) {
+                agent.ctx.effect(() => {
+                  // The retained environment outlives the Session's turns, so archiving the Session ends it.
+                  releaseRetainedOnArchive(agent, calls, () => stateOwners.get(agent) ?? [])
+                  return () => runtime.release(agent)
+                }, 'PTC retained environment')
+                retained.add(provider)
               }
             }
             const spec = runtime.resolve({

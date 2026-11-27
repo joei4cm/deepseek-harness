@@ -80,7 +80,10 @@ When the caller cancels and the runtime reports `abort`, `run_code` waits for cl
 
 Custom host integrations retain their `PtcExecutor` instance and call `reset(agent)` to clear that Agent's environment; reset is not a model tool or SDK binding. It requires a state-retaining runtime, cancels active calls, invokes `release(agent)`, and waits for process and started nested-tool cleanup without requiring the program to respond. Before admitting new programs, it queues `Program environment reset; retained variables cleared. Completed tool effects remain.` The notice is logged when consumed; cancellation or Agent disposal can discard it after state is cleared. Concurrent resets share cleanup. Missing or unsupported runtimes reject without blocking admission. Cleanup or notice-admission failure throws `CodeResetFailedError`; later programs report `CodeRunFailedError` with host-reset guidance until an explicit retry succeeds. Reset does not undo completed tool effects.
 
+Archiving the Session ends a retained environment before its Agent is unloaded. The archive listener lives in the Agent's own scope: it cancels the Session's running programs, ends every environment the Agent retained, and queues no model-visible notice, because the archived Session is hidden. Unarchiving the Session does not restore the environment; the next program starts from empty memory. A release that fails is reported in the host log and leaves that Session's programs blocked until a later release succeeds. A composition without the Workspace registry keeps the environment until the Agent unloads.
+
 - [`src/index.ts`](src/index.ts) — Scoped registration, tool descriptions, batch execution and host environment reset.
+- [`src/archive-release.ts`](src/archive-release.ts) — Archive-triggered release of an Agent's retained environment.
 - [`src/ptc-calls.ts`](src/ptc-calls.ts) — Call admission and cancellation; reset waits for runtime release and nested-tool cleanup before admitting new calls.
 
 </details>
@@ -163,7 +166,7 @@ These constraints apply to the host integration and accepted calls.
 - **No built-in reset control** — the shipped Loader plugin does not expose its executor instance through a service, GUI control or SDK endpoint. Hosts needing reset must mount and retain `PtcExecutor` in their own composition; that integration owns retries after a failed reset.
 - **PTC mode uses TypeScript, and presentation is per agent rather than per tool** — PTC execution requires `ctx.ptcRuntime.language === 'typescript'`; within one agent no tool can be native-only while another is ptc-only.
 - **PTC mode intermediate values are execution-local and unbounded by bytes** — they cannot be reconstructed from session replay and may exhaust process or worker memory; only the outer `run_code` output has the worker's configurable hard cap.
-- **State depends on the runtime**: Node `per-call` execution starts fresh; the default Node `persistent-in-memory` execution and Script mode with `scriptPersistence: true` retain memory per live Agent. Agent disposal awaits release. Restart and execution failures can clear memory; model-visible guidance explains how to recreate missing variables. Programs and results remain in the Session log, without serializing live objects.
+- **State depends on the runtime**: Node `per-call` execution starts fresh; the default Node `persistent-in-memory` execution and Script mode with `scriptPersistence: true` retain memory per live Agent. Archiving the Session ends the retained environment, and Agent disposal awaits release. Restart and execution failures can clear memory; model-visible guidance explains how to recreate missing variables. Programs and results remain in the Session log, without serializing live objects.
 
 <a id="dev-note"></a>
 ### Dev Note

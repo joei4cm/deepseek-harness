@@ -52,6 +52,9 @@
     },
     {
       "path": "../agent"
+    },
+    {
+      "path": "../../workspace/workspace"
     }
   ]
 }

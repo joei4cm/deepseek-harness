@@ -80,7 +80,10 @@ TypeScript 中的 `read_image` 与 CUA 截图操作返回 `Image`，其中包含
 
 自定义宿主集成保留自己的 `PtcExecutor` 实例，通过 `reset(agent)` 清空该 Agent 的环境；重置不是模型工具或 SDK 绑定。该操作要求运行时保留状态，会取消活动调用、调用 `release(agent)`，并等待进程及已启动嵌套工具的清理，无需程序响应。接纳新程序前，它排入 `Program environment reset; retained variables cleared. Completed tool effects remain.` 上下文。通知消费时写入日志；取消或 Agent 销毁可能在状态已清空后丢弃通知。并发重置共享清理过程。运行时缺失或不受支持时，操作拒绝但不阻止后续准入。清理或通知入队失败会抛出 `CodeResetFailedError`；后续程序报告带宿主重置指引的 `CodeRunFailedError`，直到显式重试成功。重置不会撤销已完成的工具操作。
 
+归档会话会在其 Agent 卸载之前结束保留的环境。归档监听器位于 Agent 自己的作用域内：它取消该会话正在运行的程序，结束 Agent 保留的每个环境，并且不排入模型可见的通知——归档后的会话已被隐藏。取消归档不会恢复该环境；下一个程序从空内存开始。释放失败会写入宿主日志，并使该会话的程序保持阻塞，直到后续释放成功。没有挂载 Workspace 注册表的组合会保留环境，直到 Agent 卸载。
+
 - [`src/index.ts`](src/index.ts) — 作用域注册、工具描述、批次执行及宿主环境重置。
+- [`src/archive-release.ts`](src/archive-release.ts) — 归档时释放 Agent 保留的环境。
 - [`src/ptc-calls.ts`](src/ptc-calls.ts) — 调用准入和取消；重置等待运行时释放及嵌套工具清理后，才接纳新调用。
 
 </details>
@@ -163,7 +166,7 @@ Error: code run failed (abort): run_code exceeded its limit of 2048 tool calls (
 - **没有内置重置控件**：自带的 Loader 插件不通过服务、GUI 控件或 SDK 端点暴露执行器实例。需要重置的宿主必须在自己的组合中挂载并保留 `PtcExecutor`，该集成负责失败后的重试。
 - **PTC mode 使用 TypeScript，且呈现方式按 agent 而非按工具**：PTC 执行要求 `ctx.ptcRuntime.language === 'typescript'`；同一个 agent 内不能让一个工具仅使用 Native，而另一个仅使用 PTC。
 - **PTC mode 中间值只存在于执行局部，且没有字节上限**：它们无法从会话回放重建，并可能耗尽进程或 worker 内存；只有外层 `run_code` 输出受 worker 可配置的硬上限约束。
-- **状态由运行时决定**：Node 的 `per-call` 执行每次重新开始；默认的 Node `persistent-in-memory` 执行和启用 `scriptPersistence: true` 的 Script 模式按存活 Agent 保留内存。Agent 销毁时等待环境释放。重启与执行失败可能清除内存；模型说明会指导重新创建缺失变量。程序与结果仍写入 Session 日志，不序列化运行中的对象。
+- **状态由运行时决定**：Node 的 `per-call` 执行每次重新开始；默认的 Node `persistent-in-memory` 执行和启用 `scriptPersistence: true` 的 Script 模式按存活 Agent 保留内存。归档会话会结束保留的环境，Agent 销毁时等待环境释放。重启与执行失败可能清除内存；模型说明会指导重新创建缺失变量。程序与结果仍写入 Session 日志，不序列化运行中的对象。
 
 <a id="dev-note"></a>
 ### 开发备注
