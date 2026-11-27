@@ -58,6 +58,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `52-client-modules-bundle-error-text.md` | `fix/client-bundle-error-text` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14429` |
 | `53-desktop-stdio-epipe-guard.md` | `fix/desktop-stdio-epipe-guard` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14451`, `#11809` |
 | `54-client-hmr-asar-watch.md` | `fix/client-hmr-asar-watch` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14454` |
+| `55-app-boot-manifest-bom.md` | `fix/app-boot-manifest-bom` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14459` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
