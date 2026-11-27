@@ -73,6 +73,44 @@ it('serializes concurrent writes and refuses stale revisions after external chan
   expect(ctx.settings.describe().find(row => row.ns === 'first')!.value).toEqual({ count: 9, list: [] })
 })
 
+it('preserves comments on untouched configuration while editing a live field', async () => {
+  const { ctx, profile } = await fixture()
+  writeFileSync(profile.patchPath, '- id: first\n  config:\n    # Keep the reason for this setting\n    ordinary: fixed # A hand-written note\n    count: 3\n')
+  await ctx.settings.update('first', { count: 4 })
+  const saved = readFileSync(profile.patchPath, 'utf8')
+  expect(saved).toContain('# Keep the reason for this setting')
+  expect(saved).toContain('# A hand-written note')
+  expect(parse(saved)).toContainEqual({ id: 'first', config: { ordinary: 'fixed', count: 4 } })
+})
+
+it('preserves nested and sequence comments on untouched values', async () => {
+  const { ctx, profile } = await fixture()
+  writeFileSync(profile.patchPath, '- id: first\n  config:\n    ordinary: fixed\n    count: 3\n    list:\n      # Keep the model note\n      - name: first # Keep the name note\n        token: hidden\n')
+  await ctx.settings.update('first', { count: 4 })
+  const saved = readFileSync(profile.patchPath, 'utf8')
+  expect(saved).toContain('# Keep the model note')
+  expect(saved).toContain('# Keep the name note')
+  expect(parse(saved)).toContainEqual({ id: 'first', config: { ordinary: 'fixed', count: 4, list: [{ name: 'first', token: 'hidden' }] } })
+})
+
+it('preserves comments on explicitly tagged values and expressions', async () => {
+  const { ctx, profile } = await fixture()
+  writeFileSync(profile.patchPath, '- id: first\n  config:\n    ordinary: !!js "\'expression-value\'" # expression note\n    count: !!int 3 # count note\n    token: !!str private # token note\n')
+  await ctx.settings.update('first', { count: 4 })
+  const saved = readFileSync(profile.patchPath, 'utf8')
+  expect(saved).toContain('# expression note')
+  expect(saved).toContain('# token note')
+  expect(saved).toContain('!!js')
+})
+
+it('keeps alias references valid when editing another field', async () => {
+  const { ctx, profile } = await fixture()
+  writeFileSync(profile.patchPath, '- id: first\n  config:\n    ordinary: fixed\n    count: 3\n    list:\n      - &item { name: first }\n      - *item\n')
+  await ctx.settings.update('first', { count: 4 })
+  const saved = readFileSync(profile.patchPath, 'utf8')
+  expect(parse(saved)).toContainEqual({ id: 'first', config: { ordinary: 'fixed', count: 4, list: [{ name: 'first' }, { name: 'first' }] } })
+})
+
 it('preserves configuration expressions while editing a different live field', async () => {
   const { ctx, profile, start } = await fixture()
   writeFileSync(profile.patchPath, '- id: first\n  config:\n    ordinary: !!js "\'expression-value\'"\n    count: 3\n- id: second\n  config:\n    ordinary: !!js "\'untouched-expression\'"\n')

@@ -8,7 +8,7 @@ import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-hmr'
 import { composeEntries, loadProfileDirectory, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
-import { isMap, isSeq, parseDocument, Scalar, visit } from 'yaml'
+import { isAlias, isMap, isNode, isScalar, isSeq, parseDocument, Scalar, visit } from 'yaml'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -19,6 +19,52 @@ declare module '@deepseek-ai/cordis' {
 
 function flatten(rows: EntryOptions[]): EntryOptions[] {
   return rows.flatMap(row => [row, ...row.group && Array.isArray(row.config) ? flatten(row.config as EntryOptions[]) : []])
+}
+
+/** Whether a YAML value contains references whose anchors must be serialized together. */
+function hasYamlReferences(value: unknown): boolean {
+  if (!isNode(value)) return false
+  let found = false
+  visit(value, (_key, node) => {
+    if (isAlias(node) || ((isScalar(node) || isMap(node) || isSeq(node)) && node.anchor !== undefined)) {
+      found = true
+      return visit.BREAK
+    }
+  })
+  return found
+}
+
+/** Retain unchanged YAML nodes and their comments when replacing a configuration mapping. */
+function preserveYaml(previous: unknown, next: unknown): unknown {
+  if (isScalar(previous) && isMap(next) && previous.tag === 'tag:yaml.org,2002:js'
+    && next.items.length === 1 && next.get('__jsExpr') === previous.value) return previous
+  if (isScalar(previous) && isScalar(next)) {
+    const standardTag = previous.tag === undefined || ['tag:yaml.org,2002:str', 'tag:yaml.org,2002:int',
+      'tag:yaml.org,2002:float', 'tag:yaml.org,2002:bool', 'tag:yaml.org,2002:null'].includes(previous.tag)
+    return standardTag && next.tag === undefined && isDeepStrictEqual(previous.value, next.value) ? previous : next
+  }
+  if (isSeq(previous) && isSeq(next)) {
+    const items = next.items.map((item, index) => preserveYaml(previous.items[index], item))
+    if (items.length === previous.items.length && items.every((item, index) => item === previous.items[index])) return previous
+    return next
+  }
+  if (!isMap(previous) || !isMap(next) || previous.tag !== next.tag) return next
+  for (const pair of next.items) {
+    if (!isScalar(pair.key) || typeof pair.key.value !== 'string') continue
+    const key = pair.key.value
+    const original = previous.items.find(item => isScalar(item.key) && item.key.value === key)
+    if (original === undefined) continue
+    pair.key = original.key
+    pair.value = preserveYaml(original.value, pair.value)
+  }
+  if (next.items.length === previous.items.length && next.items.every((pair, index) => {
+    const original = previous.items[index]
+    return original !== undefined && pair.key === original.key && pair.value === original.value
+  })) return previous
+  if (previous.comment !== undefined) next.comment = previous.comment
+  if (previous.commentBefore !== undefined) next.commentBefore = previous.commentBefore
+  if (previous.spaceBefore !== undefined) next.spaceBefore = previous.spaceBefore
+  return next
 }
 
 /** Persist complete raw configs and apply them through the normal Loader path. */
@@ -123,7 +169,12 @@ export class ConfigEditor extends Service {
             if (row.items.length === Number(row.has('id')) + Number(row.has('name'))) document.delete(index)
           }
         } else if (index < 0) document.add(document.createNode({ id: entry.options.id, name: entry.options.name, config: next }))
-        else document.setIn([index, 'config'], document.createNode(next))
+        else {
+          const replacement = document.createNode(next)
+          const value = hasYamlReferences(document.contents) || hasYamlReferences(replacement)
+            ? replacement : preserveYaml(document.getIn([index, 'config'], true), replacement)
+          document.setIn([index, 'config'], value)
+        }
         visit(document, { Map(_key, node) {
           if (node.items.length !== 1 || typeof node.get('__jsExpr') !== 'string') return
           const expression = new Scalar(node.get('__jsExpr'))
