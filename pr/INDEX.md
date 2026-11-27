@@ -47,3 +47,4 @@ This branch holds pull-request descriptions that are ready to open but are not o
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
 The `discussions/` directory holds reply drafts for upstream Discussions, ready for the author to review before posting.
+| `40-llm-pi-ai-listmodels-credential.md` | `fix/llm-pi-ai-listmodels-credential` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14394` |
