@@ -51,6 +51,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `45-ptc-release-on-archive.md` | `fix/ptc-release-on-archive` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14401` |
 | `46-scoped-repl-escaped-reserved.md` | `fix/scoped-repl-escaped-reserved` | upstream `master`, dsh-v0.2.3-alpha.2 | — |
 | `47-v4-source-admission-diagnostic.md` | `fix/v4-source-admission-diagnostic` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14411` |
+| `48-image-byte-truth.md` | `fix/attachment-image-byte-truth` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14415` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
