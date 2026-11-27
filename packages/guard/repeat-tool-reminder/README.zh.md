@@ -73,7 +73,7 @@ guard 建立在四项承诺之上：
 
 - **仅建议，不否决。** guard 用模型上下文丰富 post-execute 决策；它从不阻止或改写调用，因此 `PostToolDecision` 阻止仍是后续监听器的事。
 - **在 post-execute 中计数。** 检测运行在 `tools/post-execute` 上，被拒绝的调用同样会经过它；在那里计数让一个监听器即可覆盖所有尝试，无需跨事件状态。
-- **精确匹配规范化。** 参数以循环的 `JSON.parse` 输出（或畸形参数 JSON 的原始字符串回退）到达 guard，因此 JSON 的值域就是全部输入域，深度键排序加 `JSON.stringify` 是完整、确定性的同一性判定——不存在 bigint、循环引用或 `undefined` 处理，因为没有输入路径能产生它们。
+- **精确匹配规范化。** 参数以循环的 `JSON.parse` 输出（或畸形参数 JSON 的原始字符串回退）到达 guard，因此 JSON 的值域就是全部输入域，深度键排序加 `JSON.stringify` 是完整、确定性的同一性判定——每个解析出的键都参与判定，包括自有的 `__proto__` 键：它按数据属性写入，而不是经原型 setter 静默消失。不存在 bigint、循环引用或 `undefined` 处理，因为没有输入路径能产生它们。
 - **加载时快速失败。** `thresholds` 与 `argumentsPreviewChars` 在 `apply` 中校验并抛出错误，绝不回退到默认值。
 
 ### 检测：重复链

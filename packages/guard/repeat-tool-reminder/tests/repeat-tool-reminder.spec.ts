@@ -281,6 +281,45 @@ describe('chain semantics', () => {
     expect(reminders(agent)).toHaveLength(1) // all three canonicalize identically
   })
 
+  it('keeps calls with an own "__proto__" key distinct (the prototype setter must not drop the field)', async () => {
+    const ctx = await harness()
+    // JSON.parse produces `__proto__` as an own data property; assignment-based
+    // canonicalization sent it through the prototype setter, dropped the field,
+    // and made these three distinct calls share one chain key.
+    const protoArgs = (value: object) => JSON.parse(`{"__proto__":${JSON.stringify(value)}}`) as Record<string, unknown>
+    const adapter = new MockAdapter([
+      toolCallResponse('c1', 'probe', protoArgs({ x: 1 })),
+      toolCallResponse('c2', 'probe', {}),
+      toolCallResponse('c3', 'probe', protoArgs({ x: 2 })),
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('a1'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(reminders(agent)).toHaveLength(0) // three distinct canonical arguments, no chain
+  })
+
+  it('counts identical __proto__-keyed calls and quotes the key in the detailed reminder', async () => {
+    const ctx = await harness({ thresholds: [2, 3] })
+    const protoArgs = () => JSON.parse('{"__proto__":{"x":1}}') as Record<string, unknown>
+    const adapter = new MockAdapter([
+      toolCallResponse('c1', 'probe', protoArgs()),
+      toolCallResponse('c2', 'probe', protoArgs()),
+      toolCallResponse('c3', 'probe', protoArgs()),
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('a1'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    const found = reminders(agent)
+    expect(found).toHaveLength(2) // gentle at 2, detailed at 3 — identical canonical arguments
+    expect(found[1]!.text).toContain('arguments: {"__proto__":{"x":1}}')
+  })
+
   it('keys chains per agent: one agent repeating never trips another', async () => {
     const ctx = await harness()
     ctx.llm.registerAdapter(['mock-a'], new MockAdapter([

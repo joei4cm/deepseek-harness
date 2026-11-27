@@ -73,7 +73,7 @@ The guard is built on four commitments:
 
 - **Advisory, not veto.** The guard enriches post-execute decisions with model context; it never blocks or rewrites a call, so `PostToolDecision` blocking stays a later listener's job.
 - **Count in post-execute.** Detection runs on `tools/post-execute`, which also fires for denied calls; counting there lets one listener cover every attempt with no cross-event state.
-- **Exact-match canonicalization.** Arguments reach the guard as the loop's `JSON.parse` output (or its raw-string fallback), so JSON's value domain is the whole input domain and a deep key-sort plus `JSON.stringify` is a complete, deterministic identity — no bigint, cycle, or `undefined` handling exists because no input path can produce them.
+- **Exact-match canonicalization.** Arguments reach the guard as the loop's `JSON.parse` output (or its raw-string fallback), so JSON's value domain is the whole input domain and a deep key-sort plus `JSON.stringify` is a complete, deterministic identity — every parsed key participates, including an own `__proto__` key, which is written as a data property instead of vanishing through the prototype setter. No bigint, cycle, or `undefined` handling exists because no input path can produce them.
 - **Fail loud at load.** `thresholds` and `argumentsPreviewChars` validate in `apply` and throw, never falling back to defaults.
 
 ### Detection: the repeat chain

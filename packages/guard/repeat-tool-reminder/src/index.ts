@@ -92,16 +92,17 @@ function detailedReminder(toolName: string, count: number, canonicalArguments: s
  * argument JSON), so JSON's value domain is the whole input domain — no
  * bigint, cycle, or `undefined` handling exists because no input path can
  * produce them.
+ *
+ * Sorted records are built with `Object.fromEntries`, which defines own data
+ * properties: assignment would send a parsed `__proto__` key through the
+ * prototype setter, dropping the field and silently merging calls that
+ * differ only in its value.
  */
 function sortJsonValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortJsonValue)
   if (value !== null && typeof value === 'object') {
     const record = value as Record<string, unknown>
-    const sorted: Record<string, unknown> = {}
-    for (const key of Object.keys(record).sort()) {
-      sorted[key] = sortJsonValue(record[key])
-    }
-    return sorted
+    return Object.fromEntries(Object.keys(record).sort().map((key): [string, unknown] => [key, sortJsonValue(record[key])]))
   }
   return value
 }
