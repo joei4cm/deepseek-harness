@@ -62,6 +62,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `56-plan-mode-durable-selection.md` | `fix/plan-mode-durable-selection` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14453`, `#857` |
 | `57-web-fetch-content-type-decode.md` | `fix/web-fetch-content-type-decode` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14432` |
 | `58-subprocess-runner-stderr-diagnostic.md` | `fix/subprocess-runner-stderr-diagnostic` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14442` |
+| `59-app-boot-bootstrap-include-marker.md` | `fix/app-boot-bootstrap-include-marker` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14446` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
