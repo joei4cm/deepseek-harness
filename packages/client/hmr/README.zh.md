@@ -59,7 +59,7 @@ kind: "package-reference"
 
 ### 设计理念
 
-Host 半侧监听每个包带完成标记的入口产物，并提供经过鉴权的 `pluginEvents/follow` Remote 流。每一代流先发一个 `baseline` 帧，包含当前完整图，图的每一行携带该插件的[同步配置](../modules/README.zh.md#synced-plugin-configuration)，之后发送 `graph` 与 `rebuilt` 增量。图描述浏览器的目标条目，不保证 Host 清理已经完成。Host 的激活与清理仍由 Host 生命周期管理。入口的 mtime、ctime 和大小共同标识 revision，无需对其内容求哈希；元数据未变时无需读取内容。Host 重启时若产物未变，revision 保持不变，因此图流重连不会替换浏览器插件。浏览器半侧自行挂载 `pluginEvents` 命名空间，因此这条流不依赖 api-remotes 组装；在 Remote access 允许 `pluginEvents/follow` 时通过 `RemoteSnapshotStream` 消费。它把图帧与重建帧交给 Client Modules，由它应用同步配置、串行处理条目变更并等待浏览器资源清理。连接丢失或 Host 侧流结束会重连，新的 baseline 覆盖期间遗漏的帧。
+Host 半侧监听每个包带完成标记的入口产物，并提供经过鉴权的 `pluginEvents/follow` Remote 流。每一代流先发一个 `baseline` 帧，包含当前完整图，图的每一行携带该插件的[同步配置](../modules/README.zh.md#synced-plugin-configuration)，之后发送 `graph` 与 `rebuilt` 增量。图描述浏览器的目标条目，不保证 Host 清理已经完成。Host 的激活与清理仍由 Host 生命周期管理。入口的 mtime、ctime 和大小共同标识 revision，无需对其内容求哈希；元数据未变时无需读取内容。Host 重启时若产物未变，revision 保持不变，因此图流重连不会替换浏览器插件。在 Electron 下，`*.asar` 归档内部的 bundle 不参与 stat 轮询：归档内容不可变，监听永远不会触发。浏览器半侧自行挂载 `pluginEvents` 命名空间，因此这条流不依赖 api-remotes 组装；在 Remote access 允许 `pluginEvents/follow` 时通过 `RemoteSnapshotStream` 消费。它把图帧与重建帧交给 Client Modules，由它应用同步配置、串行处理条目变更并等待浏览器资源清理。连接丢失或 Host 侧流结束会重连，新的 baseline 覆盖期间遗漏的帧。
 
 ### 浏览器侧替换
 

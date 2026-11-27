@@ -38,6 +38,20 @@ type WatchedBundle = {
   -readonly [K in keyof ClientArtifactBaseline]: ClientArtifactBaseline[K]
 } & { dirty: boolean }
 
+/**
+ * Whether a bundle path sits inside an Electron `*.asar` archive while this
+ * process runs under Electron — as the main process (`process.versions`) or
+ * as a `ELECTRON_RUN_AS_NODE` child such as the Desktop Host. Archive
+ * interiors are immutable for the process lifetime, so polling them can never
+ * report a change; on packaged builds every watched bundle lives under
+ * `app.asar`, where each `statSync` re-reads the archive index often enough to
+ * pin a host core. `app.asar.unpacked` real files do not match, and plain-Node
+ * deployments keep watching `*.asar`-named directories as ordinary paths.
+ */
+const asarBundlePath = (path: string): boolean =>
+  (process.versions.electron !== undefined || process.env.ELECTRON_RUN_AS_NODE === '1')
+  && /\.asar[\\/]/.test(path)
+
 /** Snapshot the executable bundle metadata that drives reloads. */
 function bundleStat(path: string): WatchedBundleStat {
   const bundle = statSync(path)
@@ -120,7 +134,7 @@ export function apply(ctx: Context, config: Config): void {
     const rows = new Map<string, ClientArtifactBaseline>()
     for (const row of ctx.clientModules.graph().entries) {
       const watch = ctx.clientModules.artifactBaseline(row.id)
-      if (watch !== undefined) rows.set(row.id, watch)
+      if (watch !== undefined && !asarBundlePath(watch.path)) rows.set(row.id, watch)
     }
     for (const [id, watch] of watched) {
       if (rows.get(id)?.path === watch.path) continue

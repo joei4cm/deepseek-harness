@@ -3,7 +3,7 @@
  * report through clientModuleHost.rebuilt, and everything dies with the fiber,
  * including the plugin-events Remote service.
  */
-import { mkdtempSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -230,5 +230,67 @@ describe('hmr node half', () => {
 
     await vi.waitFor(() => { expect(clientModuleHost.rebuiltCalls).toEqual(['pkg-a', 'pkg-a']) }, { timeout: 3_000 })
     await fiber.dispose()
+  })
+
+  it('does not stat-poll bundles inside an Electron asar archive', async () => {
+    vi.stubEnv('ELECTRON_RUN_AS_NODE', '1')
+    const asarDir = join(dir, 'app.asar', 'dsh')
+    mkdirSync(asarDir, { recursive: true })
+    const asarBundle = join(asarDir, 'client.js')
+    writeFileSync(asarBundle, 'v1')
+    const plain = join(dir, 'plain.js')
+    writeFileSync(plain, 'v1')
+    const clientModuleHost = fakeClientModuleHost(new Map([
+      ['pkg-asar', asarBundle],
+      ['pkg-plain', plain],
+    ]))
+    const fiber = await mount(clientModuleHost)
+    try {
+      clientModuleHost.rebuiltCalls.length = 0
+      await new Promise(resolve => setTimeout(resolve, POLL_MS * 2))
+      writeFileSync(asarBundle, 'v2-longer')
+      writeFileSync(plain, 'v2-longer')
+      await vi.waitFor(() => { expect(clientModuleHost.rebuiltCalls).toContain('pkg-plain') }, { timeout: 3_000 })
+      await new Promise(resolve => setTimeout(resolve, POLL_MS * 3))
+      expect(clientModuleHost.rebuiltCalls).toEqual(['pkg-plain'])
+    } finally {
+      await fiber.dispose()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('does not stat-poll asar bundles in the Electron main process', async () => {
+    Reflect.set(process.versions, 'electron', '9.9.9')
+    const asarDir = join(dir, 'app.asar')
+    mkdirSync(asarDir, { recursive: true })
+    const bundle = join(asarDir, 'client.js')
+    writeFileSync(bundle, 'v1')
+    const clientModuleHost = fakeClientModuleHost(new Map([['pkg-a', bundle]]))
+    const fiber = await mount(clientModuleHost)
+    try {
+      await new Promise(resolve => setTimeout(resolve, POLL_MS * 2))
+      writeFileSync(bundle, 'v2-longer')
+      await new Promise(resolve => setTimeout(resolve, POLL_MS * 3))
+      expect(clientModuleHost.rebuiltCalls).toEqual([])
+    } finally {
+      await fiber.dispose()
+      Reflect.deleteProperty(process.versions, 'electron')
+    }
+  })
+
+  it('keeps watching asar-named directories outside Electron', async () => {
+    const asarDir = join(dir, 'app.asar')
+    mkdirSync(asarDir, { recursive: true })
+    const bundle = join(asarDir, 'client.js')
+    writeFileSync(bundle, 'v1')
+    const clientModuleHost = fakeClientModuleHost(new Map([['pkg-a', bundle]]))
+    const fiber = await mount(clientModuleHost)
+    try {
+      await new Promise(resolve => setTimeout(resolve, POLL_MS * 2))
+      writeFileSync(bundle, 'v2-longer')
+      await vi.waitFor(() => { expect(clientModuleHost.rebuiltCalls).toContain('pkg-a') }, { timeout: 3_000 })
+    } finally {
+      await fiber.dispose()
+    }
   })
 })
