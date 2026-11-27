@@ -55,6 +55,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `49-repeat-tool-reminder-proto-key.md` | `fix/repeat-tool-reminder-proto-key` | upstream `master`, dsh-v0.2.3-alpha.2 | — |
 | `50-cordis-inspect-encoded-input.md` | `fix/cordis-inspect-encoded-input` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14421` |
 | `51-workspace-session-expand-label.md` | `fix/workspace-session-expand-label` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14424` |
+| `52-client-modules-bundle-error-text.md` | `fix/client-bundle-error-text` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14429` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
