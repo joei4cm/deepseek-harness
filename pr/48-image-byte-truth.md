@@ -36,6 +36,7 @@
 - 本机 `pnpm exec vitest run packages/attachment/attachment-local/tests/ --maxWorkers=2 --coverage --coverage.include='packages/attachment/attachment-local/src/store.ts'`：该文件语句 / 分支 / 函数 / 行覆盖率 100%。
 - 本机 `pnpm run lint`：通过。
 - 本机 `pnpm run typecheck`：5 项门禁通过。
+- 本机 `pnpm run build`：10 项门禁通过。
 - 本机 `pnpm run test:docs`：21 项通过。
 - 本机 `pnpm run doc-sync`：41 项通过，`tool catalog` 与 `package paths` 两项失败为上游 master 既有问题（`scripts/gen-tool-catalog.ts` 与 `docs/upgrade-guide/v0.2.1-alpha.1/python-ptc-sandbox/` 与 master 字节一致，本 PR 未触及）。
 - 本机 `pnpm run verify-translation-pairing --write packages/fs/tool-fs/README.md packages/attachment/attachment/README.md packages/attachment/attachment-local/README.md`：三个配对已重新记录。
