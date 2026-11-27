@@ -34,28 +34,41 @@ With Inspect available, `Config.listConfigs` filtered by `name` lists mounted en
 ELECTRON_RUN_AS_NODE=1 "$DSH_NODE_EXECUTABLE" -e "console.log(require('node:path').dirname(require.resolve(process.argv[1] + '/package.json', { paths: [process.env.DSH_INSTALL_DIR] })))" @deepseek-ai/dsh-tool-bash
 ```
 
-In PowerShell, use redirected process output and wait for the exit code. Windows Desktop's Electron is a GUI-subsystem executable, for which `&` does not reliably wait. Replace `$script` and `$arguments` for other reads:
+In Windows PowerShell 5.1 and later PowerShell versions, pass the script through stdin and wait for the exit code. Windows Desktop's Electron is a GUI-subsystem executable, for which `&` does not reliably wait. Change `packageName` to resolve a different package:
 
 ```powershell
+$ErrorActionPreference = 'Stop'
+if (-not $env:DSH_NODE_EXECUTABLE -or -not $env:DSH_INSTALL_DIR) {
+    throw 'DSH_NODE_EXECUTABLE and DSH_INSTALL_DIR must be set.'
+}
 $script = @'
-console.log(require('node:path').dirname(require.resolve(process.argv[1] + '/package.json', { paths: [process.env.DSH_INSTALL_DIR] })))
+const packageName = '@deepseek-ai/dsh-tool-bash';
+console.log(require('node:path').dirname(require.resolve(packageName + '/package.json', { paths: [process.env.DSH_INSTALL_DIR] })));
 '@
-$arguments = @('@deepseek-ai/dsh-tool-bash')
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $start = [System.Diagnostics.ProcessStartInfo]::new($env:DSH_NODE_EXECUTABLE)
-foreach ($argument in @('-e', $script, '--') + $arguments) { $start.ArgumentList.Add($argument) }
-$start.Environment['ELECTRON_RUN_AS_NODE'] = '1'
+$start.Arguments = '-'
+$start.EnvironmentVariables['ELECTRON_RUN_AS_NODE'] = '1'
 $start.UseShellExecute = $false
+$start.RedirectStandardInput = $true
 $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
 $start.StandardOutputEncoding = [System.Text.Encoding]::UTF8
 $start.StandardErrorEncoding = [System.Text.Encoding]::UTF8
 $process = [System.Diagnostics.Process]::Start($start)
+$stdout = $process.StandardOutput.ReadToEndAsync()
 $stderr = $process.StandardError.ReadToEndAsync()
-$stdout = $process.StandardOutput.ReadToEnd()
+try {
+    $process.StandardInput.WriteLine($script)
+} finally {
+    $process.StandardInput.Close()
+}
 $process.WaitForExit()
-[Console]::Out.Write($stdout)
+[Console]::Out.Write($stdout.Result)
 [Console]::Error.Write($stderr.Result)
+if ($process.ExitCode -eq 0 -and [string]::IsNullOrWhiteSpace($stdout.Result)) {
+    throw 'The runtime did not report a package directory.'
+}
 exit $process.ExitCode
 ```
 
