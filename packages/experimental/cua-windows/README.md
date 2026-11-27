@@ -44,7 +44,7 @@ Each result contains `id`, `displayName`, and `isRunning`. The ID is an AUMID, i
 - `app.getWindow(windowId)` returns a Window object without reading accessibility state. Pass the opaque window ID returned by the provider unchanged. Window operations check that the target still belongs to the selected application.
 - `window.getAccessibilityTree()` explicitly reads accessibility state. Element IDs belong to the current observation; reading another window of the same App replaces the facade's current snapshot. Do not mix elements or snapshots across windows.
 - Use `getActionSchema(action)` to query an action's parameter JSON Schema.
-- `window.getScreenshot()` captures that explicit window and does not read or replace its accessibility tree. Screenshots can remain usable when an accessibility read fails.
+- `window.getScreenshot()` captures that explicit window and does not read or replace its accessibility tree. Screenshots can remain usable when an accessibility read fails. The image holds the captured window content, and a capture whose size differs from the window bounds by up to two pixels is accepted, because Windows rounds the captured content size and the window frame bounds differently.
 - `app.activate()` explicitly requests foreground activation. `app.show()` restores a default window without requesting activation; `window.show()` restores the named window. An absent default returns `WINDOW_NOT_FOUND`; an ambiguous default returns `AMBIGUOUS_WINDOW`.
 
 <a id="interaction-rules"></a>

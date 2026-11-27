@@ -19,6 +19,11 @@ void Refuses(Action action, string code)
     catch (NativeFailure failure) { Check(failure.Code == code, "Unexpected refusal: " + failure.Code); }
 }
 
+Check(CaptureSize.Matches(1919, 1920), "A one pixel capture difference is not a resize");
+Check(CaptureSize.Matches(1922, 1920), "A two pixel capture difference is not a resize");
+Check(!CaptureSize.Matches(1923, 1920), "A larger capture difference is a resize");
+Check(CaptureSize.Matches(1080, 1080), "An identical capture size matches the window bounds");
+
 var request = NativeRequest.Parse(WireJson.Parse("""{"id":"one","method":"getState","params":{"appHandle":"app","maxElements":20,"maxDepth":5}}"""));
 Check(request.Method == "getState" && request.Id == "one", "Valid requests retain correlation and method");
 foreach (var (maxElements, maxDepth) in new[] { (1, 1), (7, 3), (10000, 100) })

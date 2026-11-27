@@ -44,7 +44,7 @@ kind: "package-reference"
 - `app.getWindow(windowId)` 返回 Window 对象，不读取辅助功能树。窗口 ID 是提供方返回的不透明字符串，请原样传递。执行窗口操作时会检查目标是否仍属于所选应用。
 - `window.getAccessibilityTree()` 显式读取辅助功能树。元素 ID 属于当前观察；读取同一 App 的另一个窗口会替换门面当前使用的快照。不要跨窗口混用元素或快照。
 - 通过 `getActionSchema(action)` 查询动作的参数 JSON Schema。
-- `window.getScreenshot()` 截取明确指定的窗口，不读取或替换辅助功能树。辅助功能读取失败时，截图仍可能可用。
+- `window.getScreenshot()` 截取明确指定的窗口，不读取或替换辅助功能树。辅助功能读取失败时，截图仍可能可用。图像只包含捕获到的窗口内容；捕获尺寸与窗口边界相差不超过两个像素时仍被接受，因为 Windows 对捕获内容尺寸和窗口边框边界的取整方式不同。
 - `app.activate()` 显式请求前台激活。`app.show()` 恢复默认窗口而不请求激活；`window.show()` 恢复指定窗口。没有默认窗口时返回 `WINDOW_NOT_FOUND`，无法唯一确定默认窗口时返回 `AMBIGUOUS_WINDOW`。
 
 <a id="interaction-rules"></a>

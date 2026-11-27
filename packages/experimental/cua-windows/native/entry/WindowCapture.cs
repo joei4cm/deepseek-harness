@@ -19,8 +19,10 @@ internal sealed class WindowCapture
     {
         var geometry = window.Geometry(app, context);
         using var bitmap = await CaptureBitmap(window.Handle, context);
-        if (bitmap.PixelWidth != geometry.Pixels.Width || bitmap.PixelHeight != geometry.Pixels.Height)
-            throw new NativeFailure("WINDOW_CHANGED", "The captured size does not match the window bounds; capture the window again");
+        if (!CaptureSize.Matches(bitmap.PixelWidth, geometry.Pixels.Width)
+            || !CaptureSize.Matches(bitmap.PixelHeight, geometry.Pixels.Height))
+            throw new NativeFailure("WINDOW_CHANGED", $"The captured size {bitmap.PixelWidth}x{bitmap.PixelHeight} "
+                + $"does not match the window bounds {geometry.Pixels.Width}x{geometry.Pixels.Height}; capture the window again");
 
         using var stream = new InMemoryRandomAccessStream();
         var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream);
@@ -80,8 +82,11 @@ internal sealed class WindowCapture
             if (frame is not null)
             {
                 var contentSize = frame.ContentSize;
-                if (contentSize.Width != size.Width || contentSize.Height != size.Height)
-                    throw new NativeFailure("WINDOW_CHANGED", "The window size changed during capture; capture the window again");
+                if (contentSize.Width <= 0 || contentSize.Height <= 0)
+                    throw new NativeFailure("WINDOW_CHANGED", "The captured frame has no usable content size");
+                if (!CaptureSize.Matches(contentSize.Width, size.Width) || !CaptureSize.Matches(contentSize.Height, size.Height))
+                    throw new NativeFailure("WINDOW_CHANGED", $"The captured content {contentSize.Width}x{contentSize.Height} "
+                        + $"does not match the capture size {size.Width}x{size.Height}; capture the window again");
 
                 // Keep the frame alive until GPU readback settles, even when the request is cancelled.
                 var bitmap = await SoftwareBitmap.CreateCopyFromSurfaceAsync(frame.Surface);
