@@ -282,9 +282,9 @@ describe('runner launch inputs', () => {
     expect(runnerStdio(spec, false)).toEqual(['pipe', 'pipe', 'inherit'])
     const withControl = { ...spec, stdio: { ...spec.stdio, control: 'pipe' as const } }
     expect(runnerStdio(withControl, false)).toEqual(['pipe', 'pipe', 'inherit', 'ignore', 'ignore', 'ignore', 'ignore', 'overlapped'])
-    expect(runnerStdio(withControl, true)).toEqual(['ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2, 'overlapped'])
+    expect(runnerStdio(withControl, true)).toEqual(['ignore', 'ignore', 'pipe', 'ipc', 'pipe', 'pipe', 2, 'overlapped'])
     expect(runnerStdio(spec, true)).toEqual([
-      'ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2,
+      'ignore', 'ignore', 'pipe', 'ipc', 'pipe', 'pipe', 2,
     ])
     expect(runnerStdio({
       ...spec,
@@ -293,7 +293,7 @@ describe('runner launch inputs', () => {
     expect(runnerStdio({
       ...spec,
       stdio: { stdin: 'ignore', stdout: 'inherit', stderr: 'pipe' },
-    }, true, 17)).toEqual(['ignore', 'ignore', 'ignore', 'ipc', 17, 1, 'pipe'])
+    }, true, 17)).toEqual(['ignore', 'ignore', 'pipe', 'ipc', 17, 1, 'pipe'])
   })
 
   it('removes ambient Node and tsx controls from the bootstrap environment only', () => {

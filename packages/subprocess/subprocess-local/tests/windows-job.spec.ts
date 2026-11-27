@@ -17,7 +17,7 @@ class FakeChild extends EventEmitter {
   targetStdin = new PassThrough()
   targetStdout = new PassThrough()
   targetStderr = new PassThrough()
-  stdio = [null, null, null, null, this.targetStdin, this.targetStdout, this.targetStderr]
+  stdio = [null, null, this.stderr, null, this.targetStdin, this.targetStdout, this.targetStderr]
   sent: unknown[] = []
   killed: NodeJS.Signals[] = []
   sendError: Error | undefined
@@ -171,7 +171,7 @@ describe('Windows parent runner contract', () => {
     expect(result.control).toBe(control)
     expect(child.sent).toEqual([{ type: 'start', cwd: 'C:\\target', env: { TARGET: 'yes' }, control: 'pipe' }])
     expect(spawn).toHaveBeenCalledWith('C:\\node.exe', expect.any(Array), expect.objectContaining({
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2, 'overlapped'],
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc', 'pipe', 'pipe', 2, 'overlapped'],
     }))
     control.destroy()
   })
@@ -183,7 +183,7 @@ describe('Windows parent runner contract', () => {
     ], expect.objectContaining({
       cwd: process.cwd(),
       windowsHide: true,
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2],
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc', 'pipe', 'pipe', 2],
     }))
     expect(child.sent).toEqual([{ type: 'start', cwd: 'C:\\target', env: { TARGET: 'yes' } }])
     expect(result.stdin).toBe(child.targetStdin)
@@ -199,7 +199,7 @@ describe('Windows parent runner contract', () => {
     } as const
     const { result, spawn } = launch(child, ignored)
     expect(spawn).toHaveBeenCalledWith('C:\\node.exe', expect.any(Array), expect.objectContaining({
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc', expect.any(Number), 'pipe', 2],
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc', expect.any(Number), 'pipe', 2],
     }))
     const options = spawn.mock.calls[0]?.[2] as { stdio: unknown[] }
     const carrier = options.stdio[4]
@@ -351,6 +351,67 @@ describe('Windows parent runner contract', () => {
     statusless.child.exit( null, null)
     await expect(statusless.result.direct).rejects.toThrow('without an exit status')
     await expect(statusless.result.direct).rejects.toMatchObject({ name: 'SubprocessError', code: 'SUBPROCESS_RUNNER_FAILED' })
+  })
+
+  it('appends the bounded runner stderr tail and the hex exit code to failure messages', async () => {
+    const crash = launch()
+    crash.child.stderr.write('node:internal/bootstrap: fatal startup error')
+    await new Promise(resolve => setImmediate(resolve))
+    crash.child.exit( 1, null)
+    await expect(crash.result.direct).rejects.toThrow(
+      'subprocess-local: Windows Job runner exited with exit code 1 (0x00000001) '
+      + 'before proving its managed range empty; runner stderr: node:internal/bootstrap: fatal startup error',
+    )
+    await expect(crash.result.direct).rejects.toMatchObject({ name: 'SubprocessError', code: 'SUBPROCESS_RUNNER_FAILED' })
+
+    const afterStart = launch()
+    afterStart.child.stderr.write('tail-before-error')
+    await new Promise(resolve => setImmediate(resolve))
+    const postError = new Error('runner transport fault')
+    afterStart.child.emit('error', postError)
+    await expect(afterStart.result.direct).rejects.toThrow(
+      `subprocess-local: Windows Job runner failed after it started: ${String(postError)}; runner stderr: tail-before-error`,
+    )
+
+    // The tail is capped at 4 KiB; bytes are only cut at the start. An 'é'
+    // whose lead byte is cut leaves a continuation byte at the tail start,
+    // which decodes as a replacement character and is dropped.
+    const overflowing = launch()
+    const prefix = 'a'.repeat(500) + 'é' + 'x'.repeat(3596)
+    overflowing.child.stderr.write(prefix)
+    overflowing.child.stderr.write('y'.repeat(499))
+    await new Promise(resolve => setImmediate(resolve))
+    overflowing.child.exit( 1, null)
+    const expectedTail = 'x'.repeat(3596) + 'y'.repeat(499)
+    const overflowMessage = await overflowing.result.direct.catch((error: unknown) => (error as Error).message)
+    expect(overflowMessage).toBe(
+      'subprocess-local: Windows Job runner exited with exit code 1 (0x00000001) '
+      + `before proving its managed range empty; runner stderr: ${expectedTail}`,
+    )
+    expect(overflowMessage).not.toContain('é')
+    expect(overflowMessage).not.toContain('�')
+
+    // Whitespace-only stderr, and a runner without a piped fd 2, keep the
+    // previous message byte-identical.
+    const blank = launch()
+    blank.child.stderr.write('   \n')
+    await new Promise(resolve => setImmediate(resolve))
+    blank.child.exit( 1, null)
+    await expect(blank.result.direct).rejects.toThrow(
+      'subprocess-local: Windows Job runner exited with exit code 1 (0x00000001) '
+      + 'before proving its managed range empty',
+    )
+    const blankMessage = await blank.result.direct.catch((error: unknown) => (error as Error).message)
+    expect(blankMessage).not.toContain('runner stderr')
+
+    const noPipe = new FakeChild()
+    noPipe.stdio[2] = null
+    const unPiped = launch(noPipe)
+    unPiped.child.exit( 1, null)
+    await expect(unPiped.result.direct).rejects.toThrow(
+      'subprocess-local: Windows Job runner exited with exit code 1 (0x00000001) '
+      + 'before proving its managed range empty',
+    )
   })
 
   it('fails closed on malformed/duplicate result, runner spawn error, and start-send error', async () => {

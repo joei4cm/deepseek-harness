@@ -37,6 +37,51 @@ function runnerIpcFailure(error: unknown): SubprocessError {
   )
 }
 
+/** Bytes of the runner's own stderr kept for failure diagnostics. */
+const RUNNER_STDERR_TAIL_BYTES = 4096
+
+/** Text decoder for the captured runner stderr tail. */
+const runnerStderrDecoder = new TextDecoder('utf-8')
+
+/**
+ * Decode the bounded runner stderr tail for the failure message. Bytes are
+ * only kept whole at the end, so an invalid sequence can only sit at the
+ * start: a lead byte truncated by the cap leaves trailing continuation bytes,
+ * which decode as replacement characters and are dropped here.
+ *
+ * @param tail - the last captured bytes of the runner's stderr, or `undefined`
+ *   when nothing was written.
+ * @returns the trimmed decoded tail.
+ */
+function decodeRunnerStderrTail(tail: Buffer | undefined): string {
+  if (tail === undefined) return ''
+  return runnerStderrDecoder.decode(tail).replace(/^�+/, '').trim()
+}
+
+/**
+ * The runner stderr suffix for a failure message, or `''` when the tail
+ * decodes to nothing.
+ *
+ * @param tail - the captured runner stderr tail.
+ * @returns the message suffix, including its leading separator.
+ */
+function runnerStderrSuffix(tail: Buffer | undefined): string {
+  const text = decodeRunnerStderrTail(tail)
+  return text === '' ? '' : `; runner stderr: ${text}`
+}
+
+/**
+ * Format a runner exit code as its unsigned 32-bit decimal and hexadecimal
+ * values, so a Windows status code reads without conversion.
+ *
+ * @param exitCode - the exit code reported by the runner process.
+ * @returns the decimal value followed by the zero-padded hex form.
+ */
+function formatRunnerExitCode(exitCode: number): string {
+  const unsigned = exitCode >>> 0
+  return `${String(unsigned)} (0x${unsigned.toString(16).toUpperCase().padStart(8, '0')})`
+}
+
 /** Test seams for runner launch and dynamic capability checks. */
 export interface WindowsJobInternals {
   spawn?: typeof spawn
@@ -158,6 +203,17 @@ export function launchWindowsJob(
   }
   const targetStdin = child.stdio[4] as Writable | null
 
+  // Keep a bounded tail of the runner's own stderr (fd 2; the target's stderr
+  // rides fd 6) so a failed runner leaves its Node-level error text in the
+  // message. A non-piped fd 2 keeps the previous byte-identical message.
+  let runnerStderrTail: Buffer | undefined
+  child.stdio[2]?.on('data', (chunk: Buffer) => {
+    runnerStderrTail = runnerStderrTail === undefined ? chunk : Buffer.concat([runnerStderrTail, chunk])
+    if (runnerStderrTail.length > RUNNER_STDERR_TAIL_BYTES) {
+      runnerStderrTail = runnerStderrTail.subarray(runnerStderrTail.length - RUNNER_STDERR_TAIL_BYTES)
+    }
+  })
+
   const direct = Promise.withResolvers<SubprocessOutcome>()
   const rangeExit = Promise.withResolvers<void>()
   let directResultType: WindowsRunnerResult['type'] | undefined
@@ -168,6 +224,7 @@ export function launchWindowsJob(
     direct.reject(error)
     rangeExit.reject(error)
   }
+  const runnerDiagnostic = (): string => runnerStderrSuffix(runnerStderrTail)
   const settleRange = (): void => {
     if (!runnerSpawned || runnerExit === undefined) return
     const { exitCode, signal } = runnerExit
@@ -181,9 +238,9 @@ export function launchWindowsJob(
     }
     const status = signal !== null
       ? `signal ${signal}`
-      : exitCode === null ? 'without an exit status' : `exit code ${String(exitCode)}`
+      : exitCode === null ? 'without an exit status' : `exit code ${formatRunnerExitCode(exitCode)}`
     failInfrastructure(new SubprocessError(
-      `subprocess-local: Windows Job runner exited with ${status} before proving its managed range empty`,
+      `subprocess-local: Windows Job runner exited with ${status} before proving its managed range empty${runnerDiagnostic()}`,
       'SUBPROCESS_RUNNER_FAILED',
     ))
   }
@@ -244,7 +301,7 @@ export function launchWindowsJob(
       return
     }
     failInfrastructure(new SubprocessError(
-      `subprocess-local: Windows Job runner failed after it started: ${String(error)}`,
+      `subprocess-local: Windows Job runner failed after it started: ${String(error)}${runnerDiagnostic()}`,
       'SUBPROCESS_RUNNER_FAILED',
       { cause: error },
     ))
