@@ -48,6 +48,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `42-cua-windows-capture-content-size.md` | `fix/cua-windows-capture-content-size` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14399` |
 | `43-dsh-doc-powershell-example.md` | `fix/dsh-doc-powershell-example` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14403` |
 | `44-settings-preserve-undeclared-keys.md` | `fix/settings-preserve-undeclared-keys` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14400` |
+| `45-ptc-release-on-archive.md` | `fix/ptc-release-on-archive` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14401` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
