@@ -303,9 +303,19 @@ function pointsInto(link: string, root: string): boolean {
   }
 }
 
+/**
+ * Parse manifest JSON text, dropping one leading byte-order mark that an
+ * editor may add; `JSON.parse` rejects U+FEFF outright.
+ * @param text - the file's UTF-8 text.
+ * @returns the parsed JSON value.
+ */
+function parseManifestJson(text: string): unknown {
+  return JSON.parse(text.startsWith('\uFEFF') ? text.slice(1) : text)
+}
+
 /** Read one package manifest while traversing a dependency graph. */
 function readPackageManifest(anchor: string): ProfileManifest {
-  return JSON.parse(readFileSync(anchor, 'utf8')) as ProfileManifest
+  return parseManifestJson(readFileSync(anchor, 'utf8')) as ProfileManifest
 }
 
 /** Return dependency names that may be imported by a loader-visible plugin. */
@@ -554,7 +564,7 @@ export function readProfileManifest(binName: string, dir: string): ProfileManife
     throw new Error(`${binName}: failed to read profile manifest ${path}: ${String(error)}`)
   }
   // The field checks below validate the file data before trusting the parse type.
-  const parsed = JSON.parse(raw) as ProfileManifest | null
+  const parsed = parseManifestJson(raw) as ProfileManifest | null
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`${binName}: profile manifest ${path} must hold a JSON object`)
   }

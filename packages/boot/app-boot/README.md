@@ -27,7 +27,7 @@ English | [中文](README.zh.md)
 
 Starting an app with this package is a small, explicit entry point: you give it a config file and it runs the whole boot. This section covers what you can do and what you get; the helper calls behind each outcome are documented in the folded implementation section.
 
-Profile loading removes retired installation-bundle selections from `dsh.profile.bundles` and rewrites the manifest only when needed, preserving other fields. [Team migration](../../../docs/upgrade-guide/v0.2.1-rc.2/session-team-mode/guide.md) describes the default composition and retained row overrides.
+Profile loading removes retired installation-bundle selections from `dsh.profile.bundles` and rewrites the manifest only when needed, preserving other fields. [Team migration](../../../docs/upgrade-guide/v0.2.1-rc.2/session-team-mode/guide.md) describes the default composition and retained row overrides. Profile and dependency manifests may carry one leading UTF-8 byte-order mark; the loader removes it before JSON parsing. A double BOM or BOM outside the leading position remains invalid JSON.
 
 ### When to use it
 

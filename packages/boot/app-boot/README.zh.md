@@ -27,7 +27,7 @@ kind: "package-library"
 
 用此包启动应用是一个小而显式的入口：你给它一个配置文件，它运行整个启动过程。本节说明你能做什么、能得到什么；每个结果背后的 helper 调用记录在下方可折叠的实现章节中。
 
-profile 加载时会从 `dsh.profile.bundles` 移除已停用的安装方 bundle 选项，仅在需要时重写 manifest，保留其他字段。[Team 迁移](../../../docs/upgrade-guide/v0.2.1-rc.2/session-team-mode/guide.zh.md)说明默认组合与保留的行覆盖。
+profile 加载时会从 `dsh.profile.bundles` 移除已停用的安装方 bundle 选项，仅在需要时重写 manifest，保留其他字段。[Team 迁移](../../../docs/upgrade-guide/v0.2.1-rc.2/session-team-mode/guide.zh.md)说明默认组合与保留的行覆盖。profile 与依赖 manifest 可以携带一个开头的 UTF-8 BOM；加载器会在 JSON 解析前移除它。双重 BOM 或非开头位置的 BOM 仍视为非法 JSON。
 
 ### 何时使用
 
