@@ -4,10 +4,18 @@ import { SessionFormatError, isSessionFormatJsonObject } from '@deepseek-ai/dsh-
 import type { SessionFormatEvent } from '@deepseek-ai/dsh-session-format'
 import { mapEventMessages } from './sources.ts'
 
-function source(message: Readonly<Record<string, unknown>>): void {
+/** Character bound for the observed-source excerpt; JSON.stringify output is ASCII, so slicing cannot split a code point. */
+const SOURCE_EXCERPT_CHARS = 200
+
+function describeSource(message: Readonly<Record<string, unknown>>): string {
+  const value = message['source']
+  return isSessionFormatJsonObject(value) ? JSON.stringify(value).slice(0, SOURCE_EXCERPT_CHARS) : 'missing'
+}
+
+function source(message: Readonly<Record<string, unknown>>, label: string): void {
   const value = message['source']
   if (!isSessionFormatJsonObject(value) || typeof value['kind'] !== 'string' || value['kind'].length === 0 || value['kind'] === 'plugin') {
-    throw new SessionFormatError('format v4 message requires a producer-owned source kind')
+    throw new SessionFormatError(`format v4 message requires a producer-owned source kind (${label}: ${describeSource(message)})`)
   }
 }
 
@@ -17,7 +25,7 @@ function source(message: Readonly<Record<string, unknown>>): void {
  */
 export function assertV4MessageSources(event: SessionFormatEvent): void {
   mapEventMessages(event, (message) => {
-    source(message)
+    source(message, event.type)
     return message
   })
 }
@@ -37,6 +45,6 @@ export function assertV4SourceRowAdmission(row: unknown): void {
   for (const message of messages) {
     if (!isSessionFormatJsonObject(message)) continue
     const value = message['source']
-    if (isSessionFormatJsonObject(value) && value['kind'] === 'plugin') source(message)
+    if (isSessionFormatJsonObject(value) && value['kind'] === 'plugin') source(message, String(row['type']))
   }
 }

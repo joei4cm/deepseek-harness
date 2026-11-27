@@ -41,6 +41,17 @@ describe('V4 source admission', () => {
     }
   })
 
+  it('names the event type and the observed source in the admission diagnostic', () => {
+    expect(() => { assertV4MessageSources(event(undefined)) }).toThrow('(user/message: missing)')
+    expect(() => { assertV4MessageSources(event({ kind: '' })) }).toThrow('(user/message: {"kind":""})')
+  })
+
+  it('reports the poisoned row type when the write path refuses a retired wrapper', () => {
+    const row = { type: 'tool/result', seq: 0, time: 1, data: { message: event({ kind: 'plugin', plugin: 'stale-bundle' }).data } }
+    expect(() => sessionFormatCatalog.encodeCurrentEvent(row as SessionFormatEvent))
+      .toThrow('(tool/result: {"kind":"plugin","plugin":"stale-bundle"})')
+  })
+
   it('rejects retired wrappers in every declared message slot before recovery can discard them', () => {
     const message = event({ kind: 'plugin', plugin: 'compact' }).data
     const rows = [event({ kind: 'plugin', plugin: 'compact' }), ...['system/message', 'assistant/message', 'tool/result'].map(type => ({ type, seq: 0, time: 1, data: { message } })), { type: 'agent/inbox/spliced', seq: 0, time: 1, data: { inserted: [message] } }, { type: 'session/title-llm-request', seq: 0, time: 1, data: { messages: [message] } }]
