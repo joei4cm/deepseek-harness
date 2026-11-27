@@ -1,17 +1,37 @@
 /** Initial execution environment supplied by the module system's startup carrier. */
 import type { ScriptRealm } from '@deepseek-ai/dsh-client-script-realm/client'
 
+/** A script executed but raised a window error while its element loaded. */
+export class ScriptExecutionError extends Error {
+  constructor(url: string, messages: readonly string[]) {
+    super(`client-modules: bundle script ${url} raised an execution error: ${messages.join('; ')}`)
+    this.name = 'ScriptExecutionError'
+  }
+}
+
 /** Existing browser transport used when the carrier supplies no load hook. */
 const loadPageBundle = (url: string): Promise<void> => new Promise((resolve, reject) => {
   const el = document.createElement('script')
   el.async = true
   el.src = url
-  el.addEventListener('load', () => {
+  const scriptUrl = el.src
+  const view = el.ownerDocument.defaultView
+  const scriptErrors: string[] = []
+  const onWindowError = (event: ErrorEvent): void => {
+    if (event.filename === scriptUrl) scriptErrors.push(event.message.trim() || 'uncaught error without a message')
+  }
+  const cleanup = (): void => {
+    view?.removeEventListener('error', onWindowError)
     el.remove()
-    resolve()
+  }
+  view?.addEventListener('error', onWindowError)
+  el.addEventListener('load', () => {
+    cleanup()
+    if (scriptErrors.length > 0) reject(new ScriptExecutionError(url, scriptErrors))
+    else resolve()
   }, { once: true })
   el.addEventListener('error', () => {
-    el.remove()
+    cleanup()
     reject(new Error(`client-modules: bundle script ${url} failed to load`))
   }, { once: true })
   document.head.append(el)

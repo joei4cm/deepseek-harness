@@ -40,6 +40,66 @@ describe('module-owned Main Realm', () => {
     }
   })
 
+  it('carries the browser script error text through a load failure and the import record', async () => {
+    const { modules } = fixture()
+    const append = document.head.append.bind(document.head)
+    const load = vi.spyOn(document.head, 'append').mockImplementation((...nodes) => {
+      append(...nodes)
+      const script = nodes[0]
+      if (!(script instanceof HTMLScriptElement)) throw new Error('expected a script node')
+      window.dispatchEvent(new ErrorEvent('error', {
+        filename: script.src,
+        message: "Uncaught SyntaxError: Unexpected token ':'",
+      }))
+      script.dispatchEvent(new Event('load'))
+    })
+    try {
+      await expect(modules.import('a')).rejects.toThrow("SyntaxError: Unexpected token ':'")
+      expect(modules.importError('a')?.message).toContain("raised an execution error: Uncaught SyntaxError: Unexpected token ':'")
+    } finally {
+      load.mockRestore()
+      await modules.dispose()
+    }
+  })
+
+  it('ignores window errors from other scripts and names an execution error without a message', async () => {
+    const { modules } = fixture()
+    const append = document.head.append.bind(document.head)
+    const load = vi.spyOn(document.head, 'append').mockImplementation((...nodes) => {
+      append(...nodes)
+      const script = nodes[0]
+      if (!(script instanceof HTMLScriptElement)) throw new Error('expected a script node')
+      window.dispatchEvent(new ErrorEvent('error', { filename: 'http://localhost/other.js', message: 'unrelated' }))
+      window.dispatchEvent(new ErrorEvent('error', { filename: script.src }))
+      script.dispatchEvent(new Event('load'))
+    })
+    try {
+      await expect(modules.import('a')).rejects.toThrow('raised an execution error: uncaught error without a message')
+      expect(modules.importError('a')?.message).not.toContain('unrelated')
+    } finally {
+      load.mockRestore()
+      await modules.dispose()
+    }
+  })
+
+  it('reports a script element error as a load failure', async () => {
+    const { modules } = fixture()
+    const append = document.head.append.bind(document.head)
+    const load = vi.spyOn(document.head, 'append').mockImplementation((...nodes) => {
+      append(...nodes)
+      const script = nodes[0]
+      if (typeof script === 'string' || script === undefined) throw new Error('expected a script node')
+      script.dispatchEvent(new Event('error'))
+    })
+    try {
+      await expect(modules.import('a')).rejects.toThrow('client-modules: bundle script /a.js failed to load')
+      expect(modules.importError('a')?.message).toMatch(/failed to load$/)
+    } finally {
+      load.mockRestore()
+      await modules.dispose()
+    }
+  })
+
   it('preserves the configured carrier and shares one transport across concurrent requests', async () => {
     const load = vi.fn(async (url: string) => { expect(url).toBe('/a.js'); target.load(registration) })
     const { modules, target } = fixture(load)

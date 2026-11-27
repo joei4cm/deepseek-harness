@@ -1019,6 +1019,53 @@ describe('default transport seam', () => {
     expect([...document.querySelectorAll('script')]).toEqual([])
   })
 
+  it('captures script execution errors and does not replay a failed batch before fallback', async () => {
+    const loaded: string[] = []
+    vi.spyOn(document.head, 'append').mockImplementation((...nodes) => {
+      const script = nodes[0]
+      if (!(script instanceof HTMLScriptElement)) throw new Error('expected script node')
+      loaded.push(script.getAttribute('src') ?? '')
+      queueMicrotask(() => {
+        window.dispatchEvent(new ErrorEvent('error', {
+          filename: script.src,
+          message: "Uncaught SyntaxError: Unexpected token ':'",
+        }))
+        script.dispatchEvent(new Event('load'))
+      })
+    })
+    const b = bench([row('a'), row('b')], {}, { defaultTransport: true })
+
+    await expect(b.loader.import('a', '', {})).rejects.toThrow("Uncaught SyntaxError: Unexpected token ':'")
+    expect(loaded).toEqual([APPLICATION_URL, row('a').url])
+    expect(b.loader.importError('a')?.message).toContain('raised an execution error')
+    expect(b.loader.importError('a')?.message).toContain("Uncaught SyntaxError: Unexpected token ':'")
+    expect([...document.querySelectorAll('script')]).toEqual([])
+  })
+
+  it('keeps a row the batch registered before its execution error and falls back for the rest', async () => {
+    const loaded: string[] = []
+    vi.spyOn(document.head, 'append').mockImplementation((...nodes) => {
+      const script = nodes[0]
+      if (!(script instanceof HTMLScriptElement)) throw new Error('expected script node')
+      const src = script.getAttribute('src') ?? ''
+      loaded.push(src)
+      queueMicrotask(() => {
+        if (src === APPLICATION_URL) {
+          win.__ModuleLoader__?.load({ id: 'a', factory: () => ({ marker: 'a' }) })
+          window.dispatchEvent(new ErrorEvent('error', { filename: script.src, message: 'Uncaught TypeError: boom' }))
+        } else {
+          win.__ModuleLoader__?.load({ id: 'b', factory: () => ({ marker: 'b' }) })
+        }
+        script.dispatchEvent(new Event('load'))
+      })
+    })
+    const b = bench([row('a'), row('b')], {}, { defaultTransport: true })
+
+    expect(await b.loader.import('a', '', {})).toEqual({ marker: 'a' })
+    expect(await b.loader.import('b', '', {})).toEqual({ marker: 'b' })
+    expect(loaded).toEqual([APPLICATION_URL, row('b').url])
+  })
+
   it('a script load failure is loud and removes the node', async () => {
     vi.spyOn(document.head, 'append').mockImplementation((...nodes) => {
       const script = nodes[0]

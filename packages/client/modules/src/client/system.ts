@@ -6,7 +6,7 @@
  */
 import { stripClientSuffix } from './manifest.ts'
 import { ClientEntries } from './entries.ts'
-import { MainScriptRealm } from './main-realm.ts'
+import { MainScriptRealm, ScriptExecutionError } from './main-realm.ts'
 import { notifySubscribers } from './notify.ts'
 import type {
   BootManifest, BootModuleRow, ClientBundleRegistration, ClientBundleRequire, ClientModuleLoader, ClientModuleRecord,
@@ -177,11 +177,18 @@ export class ClientModuleSystem implements ClientModuleLoader {
   }
 
   /** Run one shared script transport per URL. */
-  private loadShared(url: string): Promise<void> {
+  private loadShared(url: string, batch = false): Promise<void> {
     let transport = this.pendingArrival.get(url)
     if (transport === undefined) {
       transport = this.mainRealm.execute({ url })
         .then(() => { this.executedBundleUrls.add(url) })
+        .catch((error: unknown) => {
+          if (error instanceof ScriptExecutionError) {
+            this.executedBundleUrls.add(url)
+            if (batch) this.failedBundleUrls.add(url)
+          }
+          throw error
+        })
         .finally(() => { this.pendingArrival.delete(url) })
       this.pendingArrival.set(url, transport)
     }
@@ -212,10 +219,11 @@ export class ClientModuleSystem implements ClientModuleLoader {
     const failures: string[] = []
     const attempt = async (url: string): Promise<'registered' | 'transport-failed' | 'not-registered'> => {
       try {
-        await this.loadShared(url)
+        await this.loadShared(url, url === preferred && fallback !== undefined)
       } catch (error) {
         failures.push(`${url}: ${describeError(error)}`)
-        return 'transport-failed'
+        if (this.factories.has(id)) return 'registered'
+        return error instanceof ScriptExecutionError ? 'not-registered' : 'transport-failed'
       }
       if (this.factories.has(id)) return 'registered'
       failures.push(`${url}: loaded without registering "${id}" via __ModuleLoader__.load`)
