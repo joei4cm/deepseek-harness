@@ -91,8 +91,9 @@ export interface PiAiAdapterOptions {
   profiles: () => ReadonlyMap<string, ResolvedPiAiProviderProfile>
   /**
    * Resolve the credential for one already-resolved profile; called once per
-   * stream call and frozen for that call, and by `listModels`, which offers no
-   * models while it throws `MISSING_CREDENTIAL`. `undefined` defers to the route's own
+   * stream call and frozen for that call, and by `listModels`, whose
+   * enumeration rejects with the same failure instead of reporting an empty
+   * model list. `undefined` defers to the route's own
    * pi-ai auth, which for an installed catalog route is its provider-native
    * ambient discovery; the plugin allows that only for a profile naming no
    * credential at all, because a named reference that misses throws `LlmError`
@@ -348,12 +349,11 @@ export class PiAiAdapter extends LlmAdapter {
     return Promise.resolve().then(async () => {
       const snapshot = this.current()
       const profile = this.profileOf(snapshot, provider)
-      try { await this.config.resolveApiKey(provider, profile) }
-      catch (error) {
-        // A route whose named key does not resolve cannot serve a request, so it offers no models until the key is stored.
-        if (error instanceof LlmError && error.code === 'MISSING_CREDENTIAL') return []
-        throw error
-      }
+      // The stream call rejects when the route's named credential does not
+      // resolve; the enumeration rejects with the same failure, because an
+      // empty list would read as a configured route with no models and hide
+      // the reason from every catalog consumer.
+      await this.config.resolveApiKey(provider, profile)
       return snapshot.models.getModels(provider).map(model => ({
         provider,
         id: model.id,
