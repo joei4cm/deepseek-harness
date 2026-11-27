@@ -40,7 +40,7 @@
 - 本机 `pnpm exec vitest run packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx --maxWorkers=2`：124/124 通过。
 - 负控：把 `WorkspaceBrowser.tsx` 与 `locales.ts` 还原为 `origin/master` 后 14 条用例失败（全部是标签断言），恢复后全部通过。
 - 本机 `pnpm run test:gui`：834 文件 / 14763 用例通过（2 跳过）。
-- 本机 `DSH_SNAPSHOT=replay pnpm run test:web`：未完成——前端重建完成后，串行重放道在本机持续运行约 90 分钟仍未到文件末尾（远超 CI 60 分钟作业预算），按决策点停止，未得出通过或失败的结论；该道仍待后续 CI 或其他环境验证，目前没有 PR 或 CI 结果。前端构建与浏览器冒烟阶段本身无报错退出。
+- 本机 `DSH_SNAPSHOT=replay pnpm run test:web`：两次均未完成——首次在前端重建后串行重放约 90 分钟未到文件末尾（远超 CI 60 分钟作业预算），按决策点停止；第二次以 `test:web:built` 复用既有构建运行至会话终止、无最终汇总，已打印的失败均属无关规格（WebKit 用例与 ENOSPC 文件监视器耗尽等本机环境问题），无标签相关失败。该道仍待后续 CI 或其他环境验证，目前没有 PR 或 CI 结果。前端构建与浏览器冒烟阶段本身无报错退出。
 - 本机 `pnpm run lint`：通过。
 - 本机 `pnpm run typecheck`：5 项门禁通过；`pnpm run build:check` 通过。
 - 本机 `pnpm run doc-sync`：41 项通过，2 项因上游已有问题失败：工具目录缺少 `tool-working-directory`，旧升级指南引用已删除的 `ptc-runtime-python` 包。
