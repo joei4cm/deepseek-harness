@@ -134,7 +134,7 @@ const page = await ctx.web.fetch({ url: 'https://example.com' })
 这些限制说明提供方何时不安全或不合适。它们是当前包约束。
 
 - **可以访问私有目标**——loopback、内网与云元数据地址与其他主机一样会被抓取。需要阻止模型访问这些地址的部署必须添加 `tools/pre-execute` 策略、网络隔离，或不挂载抓取工具。
-- **只解码文本内容**——包括 html/xhtml 与 `text/*` 加 JSON/XML 家族；缺少 `Content-Type` 或任何二进制类型都会抛出 `WEB_UNSUPPORTED_CONTENT_TYPE`，可提取文本的 PDF 解码属于明确的延期工作。
+- **只解码文本内容**——包括 html/xhtml、`text/*`、脚本文本（`application/javascript`、`application/ecmascript`）与 JSON/XML 家族；缺少 `Content-Type` 或任何二进制类型都会抛出 `WEB_UNSUPPORTED_CONTENT_TYPE`，消息会写明解析后的媒体类型与替代路径（文档类正文可保存后交给文档工具，其余二进制可改为抓取文本或 HTML 版本），可提取文本的 PDF 解码属于明确的延期工作。
 - **charset 只来自 `Content-Type` 标头**（默认 UTF-8）——HTML `<meta charset>` 声明会被忽略；不支持且不含 UTF-8 标签的声明会抛出异常。
 - **UTF-8 恢复是一种优先规则，不是编码检测**——同一组字节可能同时是合法的 UTF-8 和其他编码，长响应也不例外。恢复路径在这种情况下选择 UTF-8；不含 UTF-8 标签的畸形声明仍不受支持。
 

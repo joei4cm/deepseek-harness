@@ -67,20 +67,73 @@ export function isSameOrigin(a: URL, b: URL): boolean {
 }
 
 /**
+ * The lower-cased media type of a `Content-Type` header, without parameters or
+ * a comma-joined duplicate header's later values.
+ *
+ * @param contentType - the raw `Content-Type` header, or `null` when the
+ *   response carries none.
+ * @returns the parsed media type, or an empty string when none is declared.
+ */
+function parseMediaType(contentType: string | null): string {
+  return (contentType ?? '')
+    .replace(/,[\s\S]*$/, '')
+    .replace(/;[\s\S]*$/, '')
+    .trim()
+    .toLowerCase()
+}
+
+/**
+ * Whether the media type names a document whose saved bytes a deployment's
+ * document tools can render, so the rejection can point at a local save.
+ *
+ * @param mime - the parsed media type.
+ * @returns true for PDF, Office, and opaque binary document types.
+ */
+function isDocumentMediaType(mime: string): boolean {
+  return mime === 'application/pdf'
+    || mime === 'application/msword'
+    || mime === 'application/octet-stream'
+    || mime.startsWith('application/vnd.ms-')
+    || mime.startsWith('application/vnd.openxmlformats-officedocument.')
+}
+
+/**
  * Classify a response `Content-Type` into a decodable body kind, or `undefined`
  * for an unsupported (e.g. binary) type. `text/html` and `application/xhtml+xml`
- * are `html`; other `text/*` plus a few structured text types are `text`.
+ * are `html`; other `text/*`, script text types, and a few structured text
+ * types are `text`.
  *
  * @param contentType - the raw `Content-Type` header, or `null` when the
  *   response carries none (unsupported).
  * @returns the decodable kind, or `undefined` for an unsupported type.
  */
 export function classifyContentType(contentType: string | null): FetchableKind | undefined {
-  const mime = (contentType ?? '').replace(/;.*$/s, '').trim().toLowerCase()
+  const mime = parseMediaType(contentType)
   if (mime === 'text/html' || mime === 'application/xhtml+xml') return 'html'
   if (mime.startsWith('text/')) return 'text'
+  if (mime === 'application/javascript' || mime === 'application/ecmascript') return 'text'
   if (mime === 'application/json' || mime === 'application/xml' || mime.endsWith('+json') || mime.endsWith('+xml')) return 'text'
   return undefined
+}
+
+/**
+ * Build the rejection message for an unsupported response body. The message
+ * names the parsed media type instead of the raw header, so parameters and
+ * duplicated headers cannot reach model-visible text, and names the
+ * alternative that can still read the content: a document-like body is worth
+ * saving locally for the document tools, while other binaries are worth
+ * re-fetching as text or HTML.
+ *
+ * @param contentType - the raw `Content-Type` header, or `null` when the
+ *   response carries none.
+ * @returns the model-visible rejection message.
+ */
+export function unsupportedContentTypeMessage(contentType: string | null): string {
+  const mime = parseMediaType(contentType)
+  const alternative = isDocumentMediaType(mime)
+    ? 'save the response body to a file (for example with a shell download) and open it with the document tools'
+    : 'fetch a text or HTML version of this resource instead'
+  return `unsupported content type "${mime === '' ? 'unknown' : mime}": only text-like bodies decode; ${alternative}`
 }
 
 /**

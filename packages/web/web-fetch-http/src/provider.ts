@@ -11,7 +11,7 @@ import type { WebFetchBody, WebFetchProvider, WebFetchRequest, WebFetchResult } 
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { Response } from 'undici'
 import { classifyTransportFailure } from './transport-failure.ts'
-import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, validateFetchUrl } from './policy.ts'
+import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, unsupportedContentTypeMessage, validateFetchUrl } from './policy.ts'
 
 /** Resolved provider limits (the plugin's schemastery Config supplies defaults). */
 export interface HttpFetchLimits {
@@ -130,7 +130,7 @@ export class HttpFetchProvider implements WebFetchProvider {
     const kind = classifyContentType(contentType)
     if (kind === undefined) {
       await response.body?.cancel()
-      throw new WebError(`unsupported content type "${contentType ?? 'unknown'}"`, 'WEB_UNSUPPORTED_CONTENT_TYPE')
+      throw new WebError(unsupportedContentTypeMessage(contentType), 'WEB_UNSUPPORTED_CONTENT_TYPE')
     }
 
     // Reject unsupported declarations before reading, releasing the response stream.
