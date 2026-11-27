@@ -72,7 +72,7 @@ describe('web e2e: blank New Session folding quota', () => {
     await expect.poll(() => sidebar.getByRole('treeitem').count(), { timeout: 15_000 }).toBe(7)
     expect(await sidebar.getByText('New Session', { exact: true }).count()).toBe(1)
     expect(await sidebar.getByText('Untitled', { exact: true }).count()).toBe(5)
-    const showMore = sidebar.getByRole('button', { name: 'Show 11 more sessions' })
+    const showMore = sidebar.getByRole('button', { name: 'Show 5 more sessions' })
     await showMore.waitFor({ timeout: 15_000 })
     // The sidebar golden records its workspace row hovered, which reveals the
     // row actions `.projectRow:hover` otherwise hides. Chromium does not
@@ -101,7 +101,7 @@ describe('web e2e: blank New Session folding quota', () => {
       await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd),
       MODE,
     )
-    await sidebar.getByRole('button', { name: 'Show 6 more sessions' }).click()
+    await sidebar.getByRole('button', { name: 'Show 5 more sessions' }).click()
     await expect.poll(() => sidebar.getByRole('treeitem').count()).toBe(17)
     await sidebar.getByRole('button', { name: 'Show 1 more sessions' }).click()
     await expect.poll(() => sidebar.getByRole('treeitem').count()).toBe(18)
@@ -116,15 +116,15 @@ describe('web e2e: blank New Session folding quota', () => {
     const sidebar = page.getByRole('tree', { name: 'Sessions' })
     const workspaceTitle = basename(scaffold.workspaceCwd)
     const sessions = () => sidebar.getByText('Untitled', { exact: true }).count()
-    await sidebar.getByRole('button', { name: 'Show 11 more sessions' }).click()
+    await sidebar.getByRole('button', { name: 'Show 5 more sessions' }).click()
     await expect.poll(sessions).toBe(10)
     await sidebar.getByText('Untitled', { exact: true }).nth(8).click()
-    await sidebar.getByRole('button', { name: 'Show 6 more sessions' }).click()
+    await sidebar.getByRole('button', { name: 'Show 5 more sessions' }).click()
     await sidebar.getByRole('button', { name: 'Show 1 more sessions' }).click()
     await expect.poll(sessions).toBe(16)
     await sidebar.getByRole('button', { name: 'Show less' }).click()
     await expect.poll(sessions).toBe(9)
-    await sidebar.getByRole('button', { name: 'Show 7 more sessions' }).waitFor()
+    await sidebar.getByRole('button', { name: 'Show 5 more sessions' }).waitFor()
 
     const workspaceRow = sidebar.getByRole('treeitem').first()
     await workspaceRow.hover()
@@ -141,7 +141,7 @@ describe('web e2e: blank New Session folding quota', () => {
     await workspaceRow.click()
     await workspaceRow.click()
     await expect.poll(sessions).toBe(5)
-    await sidebar.getByRole('button', { name: 'Show 11 more sessions' }).waitFor()
+    await sidebar.getByRole('button', { name: 'Show 5 more sessions' }).waitFor()
     await assertFixtureInventory(EXPECTED_DIR, ['sidebar.expected.md', 'first-batch.expected.md', 'watermark-kept.expected.md'])
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

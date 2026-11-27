@@ -15,4 +15,4 @@
   - treeitem "Untitled 1min"
   - treeitem "Untitled 1min"
   - treeitem "Untitled 1min"
-  - button "Show 6 more sessions"
+  - button "Show 5 more sessions"
