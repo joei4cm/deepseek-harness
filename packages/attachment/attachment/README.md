@@ -49,7 +49,7 @@ Saved normalized images stay in conversation history and are projected into dete
 
 ### What can go wrong
 
-An image can be refused when you attach it — unsupported format, over the size, pixel, or dimension limits, or bytes that do not match their declared type — and the message then fails as a whole. Later, a history read can fail if the stored image was deleted or corrupted on disk. Failures carry stable codes so the client and protocol adapters can explain them in their own words.
+An image can be refused when you attach it — unsupported format, over the size, pixel, or dimension limits, or a decoded format this deployment does not accept — and the message then fails as a whole. The format of an accepted image comes from its decoded bytes rather than the declared media type, so a file whose name and content disagree is kept as the format it is. Later, a history read can fail if the stored image was deleted or corrupted on disk. Failures carry stable codes so the client and protocol adapters can explain them in their own words.
 
 -----
 

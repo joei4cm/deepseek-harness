@@ -659,14 +659,15 @@ describe('argument and service preconditions', () => {
 })
 
 describe('image admission failures', () => {
-  it('explains how to repair a declared/actual media-type mismatch', async () => {
+  it('reads a mislabeled image by the format its bytes decode as', async () => {
     await writeFile(join(dir, 'wrong.jpg'), PNG_1X1)
     const ctx = await setup()
     const result = await readImage(ctx, { file_path: 'wrong.jpg' }, agentOn('vision-model'))
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('the .jpg extension declares image/jpeg')
-    expect(text(result)).toContain('rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats')
-    expect(result.error?.info).toEqual({ name: 'AttachmentError', code: 'IMAGE_TYPE_MISMATCH' })
+    expect(result.isError).toBe(false)
+    const image = result.content[1] as { type: string; attachment: ImageAttachmentRef }
+    expect(image.type).toBe('image')
+    expect(image.attachment.mediaType).toBe('image/png')
+    expect(text(result)).toContain('image/png image, 1x1 px')
   })
 
   it('caps an extension-less read at maxImageBytes before format detection', async () => {

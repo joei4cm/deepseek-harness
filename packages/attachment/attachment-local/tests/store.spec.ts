@@ -223,7 +223,7 @@ describe('local attachment store', () => {
     await expect(readImageFile(storageRoot, ref, controller.signal)).rejects.toBe(cancellation)
   })
 
-  it('rejects malformed bytes, mismatched declarations, byte limits, and decoded-pixel limits', async () => {
+  it('rejects malformed bytes, byte limits, and decoded-pixel limits', async () => {
     const storageRoot = await root()
     await expect(saveImageFile(storageRoot, {
       data: new Uint8Array(0), mediaType: 'image/png',
@@ -231,9 +231,6 @@ describe('local attachment store', () => {
     await expect(saveImageFile(storageRoot, {
       data: Uint8Array.of(1, 2, 3), mediaType: 'image/png',
     }, LIMITS, POLICY)).rejects.toMatchObject({ code: 'INVALID_IMAGE' })
-    await expect(saveImageFile(storageRoot, {
-      data: PNG, mediaType: 'image/jpeg',
-    }, LIMITS, POLICY)).rejects.toMatchObject({ code: 'IMAGE_TYPE_MISMATCH' })
     await expect(saveImageFile(storageRoot, {
       data: PNG, mediaType: 'image/png',
     }, { ...LIMITS, maxImageBytes: 1 }, POLICY)).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
@@ -251,6 +248,19 @@ describe('local attachment store', () => {
       data: PNG, mediaType: 'image/png', name: '\u0000',
     }, LIMITS, POLICY)
     expect(unnamed).not.toHaveProperty('name')
+  })
+
+  it('takes the image format from the decoded bytes instead of the declared type', async () => {
+    const storageRoot = await root()
+
+    const ref = await saveImageFile(storageRoot, {
+      data: PNG, mediaType: 'image/jpeg',
+    }, LIMITS, POLICY)
+
+    expect(ref).toMatchObject({ mediaType: 'image/png', width: 1, height: 1 })
+    await expect(saveImageFile(storageRoot, {
+      data: PNG, mediaType: 'image/jpeg',
+    }, { ...LIMITS, mediaTypes: ['image/jpeg'] as const }, POLICY)).rejects.toMatchObject({ code: 'UNSUPPORTED_IMAGE_TYPE' })
   })
 
   it('fails closed when an object is missing, corrupted, or addressed by an invalid reference', async () => {

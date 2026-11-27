@@ -52,14 +52,24 @@ export function normalizedImagePath(root: string, ref: ImageAttachmentRef): stri
   return join(root, 'objects', sha256.slice(0, 2), sha256)
 }
 
+/**
+ * Decode one image and derive its format from the bytes.
+ * A declared media type names the format a sender believed the image had; a
+ * file whose name and content disagree is ordinary, so the decoded format
+ * decides and the deployment's accepted set is checked against it.
+ * @param data - complete encoded image bytes.
+ * @param limits - resolved source admission policy.
+ * @returns verified format and dimensions.
+ */
 async function inspectMetadata(
   data: Uint8Array,
-  declaredMediaType: ImageAttachmentRef['mediaType'],
   limits: ImageAttachmentLimits,
 ): Promise<DetectedImage> {
   if (data.byteLength === 0) throw new AttachmentError('Image is empty.', 'INVALID_IMAGE')
   const detected = await detectImage(data, { maxPixels: limits.maxImagePixels, maxDimension: limits.maxImageDimension })
-  if (detected.mediaType !== declaredMediaType) throw new AttachmentError('Declared image type does not match its bytes.', 'IMAGE_TYPE_MISMATCH')
+  if (!limits.mediaTypes.includes(detected.mediaType)) {
+    throw new AttachmentError(`Image type ${detected.mediaType} is not accepted by this deployment.`, 'UNSUPPORTED_IMAGE_TYPE')
+  }
   return detected
 }
 
@@ -90,6 +100,7 @@ export interface PreparedImageFile {
 
 /**
  * Decode, normalize, and verify one submitted image without touching storage.
+ * The reference reports the format of the decoded bytes, not the declared media type.
  * @param input - submitted encoded bytes and declared media type.
  * @param limits - source admission policy.
  * @param policy - independent normalization policy.
@@ -103,7 +114,7 @@ export async function prepareImageFile(
   if (input.data.byteLength > limits.maxImageBytes) {
     throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
   }
-  const detected = await inspectMetadata(input.data, input.mediaType, limits)
+  const detected = await inspectMetadata(input.data, limits)
   const normalized = await normalizeImage(input.data, detected, policy)
   const sha256 = digest(normalized.data)
   const name = displayName(input.name)

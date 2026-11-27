@@ -66,7 +66,7 @@ Model routes supply `maxImageBytes` as a hard encoded-byte limit and `imageTarge
 
 ### What can go wrong
 
-An image can be refused when you attach it: unsupported format, over the byte, pixel, or per-side dimension limits, or bytes that do not match their declared type. On a later read, an image that was deleted or corrupted on disk fails with a clear error. Each failure carries a stable code so the client and protocol adapters can explain it in their own words.
+An image can be refused when you attach it: unsupported format, over the byte, pixel, or per-side dimension limits, or a decoded format this deployment does not accept. The format of an accepted image comes from its decoded bytes, so a file whose name and content disagree is stored as the format it is. On a later read, an image that was deleted or corrupted on disk fails with a clear error. Each failure carries a stable code so the client and protocol adapters can explain it in their own words.
 
 -----
 
