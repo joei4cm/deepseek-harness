@@ -8,7 +8,7 @@
 
 **Behavior changes**:
 
-- V4 来源准入拒绝的 `SessionFormatError` 消息现在携带定位信息：受检事件的类型与观察到的来源的 JSON 摘录（`JSON.stringify` 输出为 ASCII，按 200 字符截断不会劈开码点；来源缺失时记 `missing`），形如 `format v4 message requires a producer-owned source kind (tool/result: {"kind":"plugin","plugin":"stale-bundle"})`。既有句子保持为前缀，现有按子串断言的用例不受影响。
+- V4 来源准入拒绝的 `SessionFormatError` 消息现在携带定位信息：受检事件的类型与序号（无序号的行省略序号）、观察到的来源的 JSON 摘录（`JSON.stringify` 输出为 ASCII，按 200 字符截断不会劈开码点；来源缺失时记 `missing`），形如 `format v4 message requires a producer-owned source kind (tool/result seq 42: {"kind":"plugin","plugin":"stale-bundle"})`。既有句子保持为前缀，现有按子串断言的用例不受影响。这正是 #14411 更新报告（报告者已定位元凶为第三方插件 `dsh-error-audit`，GitHub 全网同型报告 353 例）中诉求 2 要求的三元组（事件类型、seq、来源）。
 - 准入行为本身不变：仍拒绝缺失、畸形、空与退役的来源 kind；读取路径仍只拒绝退役包装。
 - 该诊断把「批量写入中某条行来源可疑」变成「哪类事件、哪个插件名」——若 #14411 的报告者环境存在树外或过期捆绑插件（#14408 记录了桌面自动更新会把 profile 插件留在过期的精确固定版本上），升级后下一次复现将直接给出插件名。
 
@@ -20,12 +20,13 @@
 
 | 场景 | 之前 | 之后 | 覆盖 |
 |---|---|---|---|
-| 完整准入遇到缺失来源 | 报裸句子 | 报 `(user/message: missing)` | 新增 `message-sources.spec.ts` 用例 |
-| 完整准入遇到空 kind | 报裸句子 | 报 `(user/message: {"kind":""})` | 同一用例 |
-| 写入路径拒绝 `tool/result` 上的退役包装 | 报裸句子，批量中无法定位 | 报 `(tool/result: {"kind":"plugin","plugin":"stale-bundle"})` | 新增经 `encodeCurrentEvent` 的用例（即 #14411 栈上的路径） |
+| 完整准入遇到缺失来源 | 报裸句子 | 报 `(user/message seq 0: missing)` | 新增 `message-sources.spec.ts` 用例 |
+| 完整准入遇到空 kind | 报裸句子 | 报 `(user/message seq 0: {"kind":""})` | 同一用例 |
+| 无序号的事件 | 报裸句子 | 标签省略序号，报 `(user/message: missing)` | 同一用例的解构变体 |
+| 写入路径拒绝 `tool/result` 上的退役包装 | 报裸句子，批量中无法定位 | 报 `(tool/result seq 0: {"kind":"plugin","plugin":"stale-bundle"})` | 新增经 `encodeCurrentEvent` 的用例（即 #14411 栈上的路径） |
 | 既有拒绝矩阵（六类槽位、畸形不完整行） | 不变 | 不变 | 既有用例 |
 
-负控：把 `src/message-sources.ts` 还原为 `origin/master` 后，两条新用例失败（消息缺少 `(<type>: <source>)` 部分）；还原补丁后全部通过。
+负控：把 `src/message-sources.ts` 还原为 `origin/master` 后，新增用例失败（消息缺少 `(<type> seq <n>: <source>)` 部分）；还原补丁后全部通过。
 
 **Test entries**:
 
