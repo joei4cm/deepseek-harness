@@ -108,7 +108,7 @@ Cancellation marks queued input as canceled, then signals the current foreground
 
 ### Sandbox-mode fence
 
-A write that would change the effective sandbox mode is rejected before the `sandbox/mode` event commits while that owner has an open session or a spawn in progress. The fence is attached to the exact owner and outlives a provider reload that retains existing sessions.
+A write that would change the effective sandbox mode is rejected before the `sandbox/mode` event commits while that owner has an open session or a spawn in progress. The fence is attached to the exact owner and outlives a provider reload that retains existing sessions. It reads the sandbox-mode policy generation that is live when the change is dispatched, so a policy reload leaves it comparing against the current default rather than a withdrawn one.
 
 </details>
 

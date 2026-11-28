@@ -27,32 +27,31 @@ export const name = 'terminal-bash'
 /** Required services: terminal registry, shared confinement policy, process substrate, and working directory. */
 export const inject = ['terminals', 'sandboxPolicy', 'subprocess', 'workingDirectory']
 
-interface SandboxModeFenceState {
-  pty: Context['terminals']
-  sandboxPolicy: Context['sandboxPolicy']
-}
-
-const sandboxModeFences = new WeakMap<Agent, SandboxModeFenceState>()
-
-function ensureSandboxModeFence(ctx: Context, owner: Agent): void {
-  const existing = sandboxModeFences.get(owner)
-  if (existing !== undefined) {
-    existing.pty = ctx.terminals
-    existing.sandboxPolicy = ctx.sandboxPolicy
-    return
-  }
-  const state: SandboxModeFenceState = {
-    pty: ctx.terminals,
-    sandboxPolicy: ctx.sandboxPolicy,
-  }
-  sandboxModeFences.set(owner, state)
+/**
+ * Register the owner-lifetime fence that refuses a sandbox-mode change while
+ * the owner's persistent terminal sessions are open or being created.
+ *
+ * The fence belongs to the owner's scope, so it outlives the backend that
+ * registered it and unwinds with the owner. The policy and terminal services
+ * are resolved when the event fires, so the generation that is live at the
+ * change decides the outcome.
+ * @param fenced - owners this backend already fenced.
+ * @param owner - the terminal owner whose mode changes are fenced.
+ */
+function ensureSandboxModeFence(fenced: WeakSet<Agent>, owner: Agent): void {
+  if (fenced.has(owner)) return
+  fenced.add(owner)
   owner.ctx.on('internal/dispatch', (_mode, eventName, args) => {
     if (eventName !== 'session/event') return
     const [session, event] = args as [Session, SessionEvent]
     if (session !== owner.session || event.type !== 'sandbox/mode') return
-    const folded = state.sandboxPolicy.overrideOf(session) ?? null
-    const currentMode = folded ?? state.sandboxPolicy.defaultMode
-    if (event.data.mode === currentMode || !state.pty.hasOwnerActivity(owner)) return
+    const sandboxPolicy = owner.ctx.get('sandboxPolicy')
+    const terminals = owner.ctx.get('terminals')
+    // Without a policy service no effective mode exists to compare against,
+    // and without the terminal registry no activity needs protecting.
+    if (sandboxPolicy === undefined || terminals === undefined) return
+    const currentMode = sandboxPolicy.overrideOf(session) ?? sandboxPolicy.defaultMode
+    if (event.data.mode === currentMode || !terminals.hasOwnerActivity(owner)) return
     throw new Error(
       `cannot change sandbox mode from "${currentMode}" to "${event.data.mode}" while persistent terminal sessions are open or being created; wait for creation to settle and close them first`,
     )
@@ -187,6 +186,9 @@ async function rejectAfterStartupCleanup(error: unknown, cleanup: () => Promise<
 export class BashTerminalBackend implements TerminalBackend {
   readonly type: string
 
+  /** Owners whose sandbox-mode fence this backend registered. */
+  private readonly fencedOwners = new WeakSet<Agent>()
+
   constructor(
     private readonly ctx: Context,
     private readonly config: ResolvedConfig,
@@ -203,7 +205,7 @@ export class BashTerminalBackend implements TerminalBackend {
 
   async spawn(spec: TerminalBackendSpawnSpec): Promise<LocalPtySession> {
     spec.signal?.throwIfAborted()
-    ensureSandboxModeFence(this.ctx, spec.owner)
+    ensureSandboxModeFence(this.fencedOwners, spec.owner)
     const policy = this.ctx.sandboxPolicy.resolve({ session: spec.owner.session })
     const argv = await spawnArgv(this.ctx, this.config, policy, spec.signal)
     spec.signal?.throwIfAborted()

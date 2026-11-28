@@ -723,6 +723,62 @@ describe('terminal-bash plugin shape', () => {
     expect(session.snapshotEvents().filter(event => event.type === 'sandbox/mode')).toHaveLength(2)
   })
 
+  it('fences a mode change against the policy generation that is live at the change', async () => {
+    const ctx = new Context()
+    provideWorkingDirectoryFixture(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(AgentRegistry)
+    const terminalsFiber = await ctx.plugin(TerminalSessionService)
+    await ctx.plugin(RecordingSandbox)
+    const policyFiber = await ctx.plugin(SandboxPolicyService, { mode: 'read-only', workspaceRoot: '/tmp' })
+    await ctx.plugin(StubSubprocessRuntime)
+
+    const session = ctx.sessions.create(brandString<SessionId>('mode-generation'))
+    const ownerFiber = await ctx.plugin(() => {})
+    const owner: Agent = {
+      id: session.id, options: {}, session, model: unsupportedModel(),
+      inbox: unsupportedInbox(),
+      status: 'idle',
+      ctx: ownerFiber.ctx,
+      send: () => {},
+      followup: () => {}, steer: () => {}, inject: () => {}, cancel() {},
+      runMaintenance: task => task(new AbortController().signal),
+      whenIdle: () => Promise.resolve(),
+    }
+    await ctx.agents.register(owner)
+    const fenceRegistrations: string[] = []
+    owner.ctx.on('internal/listener', (name: string) => { fenceRegistrations.push(name) })
+    const providerFiber = await registerStubLocalBackend(ctx, () => stubLocalSession())
+    await ctx.terminals.spawn(owner, { type: 'stub' })
+    // A second terminal for the same owner reuses the fence this backend registered.
+    await ctx.terminals.spawn(owner, { type: 'stub' })
+    expect(fenceRegistrations.filter(name => name === 'internal/dispatch')).toHaveLength(1)
+
+    // The deployment replaces the policy service; the fence reads the
+    // generation that is live when the mode change is dispatched.
+    await policyFiber.dispose()
+    const replacementPolicy = await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: '/tmp' })
+
+    // The live default is workspace-write, so this request changes nothing.
+    expect(() => { setSandboxMode(session, 'workspace-write') }).not.toThrow()
+    // Moving away from the live default while a terminal is open is refused.
+    expect(() => { setSandboxMode(session, 'read-only') }).toThrow(
+      'cannot change sandbox mode from "workspace-write" to "read-only" while persistent terminal sessions are open or being created; wait for creation to settle and close them first',
+    )
+
+    // Without a policy service no effective mode exists, so no change is refused.
+    await replacementPolicy.dispose()
+    expect(() => { setSandboxMode(session, 'read-only') }).not.toThrow()
+
+    // Without the terminal registry there is no activity to protect.
+    await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: '/tmp' })
+    await terminalsFiber.dispose()
+    expect(() => { setSandboxMode(session, 'read-only') }).not.toThrow()
+
+    await providerFiber.dispose()
+  })
+
   it('also fences sandbox-mode changes across unpublished PTY creation', async () => {
     const ctx = new Context()
     provideWorkingDirectoryFixture(ctx)
