@@ -80,3 +80,4 @@ The `discussions/` directory holds reply drafts for upstream Discussions, ready 
 | `70-workspace-changes-turn-wait.md` | `fix/workspace-changes-turn-tail-wait` | upstream `master`, dsh-v0.2.3-alpha.2 | `#13994` |
 | `71-session-log-incremental-tail-read.md` | `fix/session-log-incremental-tail-read` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14320` |
 | `72-session-query-live-event-clone.md` | `fix/session-query-live-event-clone` | upstream `master`, dsh-v0.2.3-alpha.2 | `#13499` |
+| `73-session-follow-rebaseline-coalesce.md` | `fix/session-follow-rebaseline-coalesce` | upstream `master`, dsh-v0.2.3-alpha.2 | `#11272` |
