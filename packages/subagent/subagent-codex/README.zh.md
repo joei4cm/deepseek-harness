@@ -41,6 +41,7 @@ kind: "package-bundle"
 |---|---|---|
 | `providerName` | `codex` | `ctx.subagents` 上的非空注册名称；每个已挂载实例都需要唯一值 |
 | `model` | Codex 原生设置 | 为本提供方实例的每个线程固定的可选非空模型名称；省略时不发送 app-server 覆盖 |
+| `codexBin` | 随包 wrapper | 可选的 Codex 可执行文件绝对路径，以 `<codexBin> app-server --stdio` 启动，例如支持随包 0.153.4 载荷尚不支持的模型的更新版 Codex CLI；路径必须指向已存在的可执行文件且不是 `.cmd` 或 `.bat` shim，否则插件在加载时失败 |
 | `env` | `{}` | 叠加在已清理凭据的父环境之上的显式子进程环境 |
 | `permissionMode` | `never` | 为本提供方实例的每个线程固定的原生非交互审批与沙箱模式 |
 | `disposeGraceMs` | `3000` | 共享 managed-range owner 各终止层级之间的宽限 |
@@ -78,7 +79,7 @@ Bundle 将 `tool-subagent-codex` 作为 Host 条目插入，因此 `subagent_cod
 
 ### 失败与恢复
 
-省略 optional dependencies、当前平台不受支持或所选载荷缺失的安装会让提供方保持休眠，并在第一次委派时于 `initialize` 阶段以安全 `unknown` 类别和任何已观测进程结果失败；不存在宿主 CLI 回退。原始 wrapper 文本只保留在 Host stderr。被取消的运行以 `aborted` 结算。
+省略 optional dependencies、当前平台不受支持或所选载荷缺失的安装会让提供方保持休眠，并在第一次委派时于 `initialize` 阶段以安全 `unknown` 类别和任何已观测进程结果失败；不存在自动的宿主 CLI 回退，只有显式配置的 `codexBin` 会运行其他可执行文件。原始 wrapper 文本只保留在 Host stderr。被取消的运行以 `aborted` 结算。
 
 -----
 
@@ -107,7 +108,7 @@ Bundle 将 `tool-subagent-codex` 作为 Host 条目插入，因此 `subagent_cod
 
 ### 运行流程
 
-一次启动只接受非空的文本块序列，并使用子代理服务选择的子级 cwd。它经子进程 seam spawn 固定命令，完成 `initialize` → `initialized` 握手，把 Profile 选择的模式与可选模型映射为官方 `thread/start` 字段并与 `{ cwd, ephemeral: true }` 一起发送，且仅在 Codex 返回有效的临时线程后发布运行。已发布的结果恰好启动一个轮次，只接受与此次运行的线程和轮次匹配的通知，并等待权威的 `turn/completed` 终态。以最后一条 `phase: "final_answer"` 的 `agentMessage` 为准；若没有，则选最后一条 `phase: "partial_answer"` 的消息（稳定的回答文本，其后仍可能有助手输出或工具调用）；若 Codex 两种明确的回答阶段都没有发出，则以最后一条 `phase: null` 的消息作为兼容性回退。`commentary` 消息绝不会被选中，其它任何阶段都会使运行失败。成功完成的轮次若没有非空白答案，结果也会判为错误。失败轮次使用粗粒度类别 `limit`、`access-policy`、`service`、`transport`、`product-error`、`invalid-result` 或 `unknown`；app-server 提前退出使用 `process`，适用的连接与 stream 失败保留数值 `httpStatusCode`。
+一次启动只接受非空的文本块序列，并使用子代理服务选择的子级 cwd。它经子进程 seam 以 `app-server --stdio` spawn 随包 wrapper 或所配置的 `codexBin`，完成 `initialize` → `initialized` 握手，把 Profile 选择的模式与可选模型映射为官方 `thread/start` 字段并与 `{ cwd, ephemeral: true }` 一起发送，且仅在 Codex 返回有效的临时线程后发布运行。已发布的结果恰好启动一个轮次，只接受与此次运行的线程和轮次匹配的通知，并等待权威的 `turn/completed` 终态。以最后一条 `phase: "final_answer"` 的 `agentMessage` 为准；若没有，则选最后一条 `phase: "partial_answer"` 的消息（稳定的回答文本，其后仍可能有助手输出或工具调用）；若 Codex 两种明确的回答阶段都没有发出，则以最后一条 `phase: null` 的消息作为兼容性回退。`commentary` 消息绝不会被选中，其它任何阶段都会使运行失败。成功完成的轮次若没有非空白答案，结果也会判为错误。失败轮次使用粗粒度类别 `limit`、`access-policy`、`service`、`transport`、`product-error`、`invalid-result` 或 `unknown`；app-server 提前退出使用 `process`，适用的连接与 stream 失败保留数值 `httpStatusCode`。
 
 </details>
 
@@ -167,8 +168,8 @@ Codex 子级会在一个全新的临时线程中，以单个轮次接收这些�
 - **每次运行均新建一个进程、一个线程和一个轮次**——不支持续接、恢复、池化、进度流或产品会话持久化。
 - **静态选择实例**——Profile 配置项固定提供方名称、可选模型与工具绑定；调用无法动态选择或修改提供方与模型，而且每个公开工具都需要唯一的 `toolName`。
 - **身份验证与账户状态仍由原生机制管理**——Bundle 会提供 CLI，但不会创建账户、登录、信任项目或改写 Codex 设置；配置与身份验证失败会公开其生命周期阶段与安全的 `unknown` 回退，而不会增加单独的公开分类体系。
-- **委派时必须存在原生平台载荷**——省略 optional dependencies 的安装、不受支持的平台以及缺失或损坏的载荷都会在第一次运行时失败；不会回退到宿主 CLI。
-- **兼容性由开发证据锁定**——若要从已验证的 0.153.4 协议基线升级，必须重新生成上游 schema 证据，并重新运行握手、答案选择、审批、取消、无密钥真实产品以及带密钥的 DeepSeek 随机数测试。
+- **委派时必须存在原生平台载荷**——省略 optional dependencies 的安装、不受支持的平台以及缺失或损坏的载荷都会在第一次运行时失败，除非 `codexBin` 选择了其他可执行文件；不会自动回退到宿主 CLI。
+- **兼容性由开发证据锁定**——若要从已验证的 0.153.4 协议基线升级，必须重新生成上游 schema 证据，并重新运行握手、答案选择、审批、取消、无密钥真实产品以及带密钥的 DeepSeek 随机数测试。`codexBin` 可执行文件不在这些证据覆盖范围内；提供方仍校验握手、线程与轮次响应，并在收到未知服务端请求时使运行失败。
 - **没有人工审批路径**——已知的无人值守审批请求会被拒绝，未知服务器请求会以默认拒绝方式使运行失败；三种 Profile 模式都不会创建 DSH 交互通道或逐次调用 allow 策略。
 - **assistant 载荷仅包含所选回答文本**——失败运行还可公开独立的安全诊断；推理、中间消息、工具通信、用量、stderr 与工作区差异不会进入父 Session。任务身份与终态结果保存在父日志中。
 - **没有可选的共享能力**——对于本提供方，共享服务会拒绝 `agentPreset`、`agentOptions`、输出 schema 和 harness 深度强制约束。

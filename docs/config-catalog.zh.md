@@ -4179,7 +4179,7 @@ export type ClaudeCodePermissionMode = typeof CLAUDE_CODE_PERMISSION_MODES[numbe
 ## `@deepseek-ai/dsh-subagent-codex`
 
 - `inject`: `subagents` · `subprocess`
-- `source`: [`packages/subagent/subagent-codex/src/index.ts:36`](../packages/subagent/subagent-codex/src/index.ts)
+- `source`: [`packages/subagent/subagent-codex/src/index.ts:39`](../packages/subagent/subagent-codex/src/index.ts)
 
 ```ts config-catalog
 /** Deployment-owned model, permission, environment, and process-release settings. */
@@ -4188,6 +4188,11 @@ export interface Config {
   providerName?: string
   /** Native Codex model fixed for this instance; omitted to inherit Codex settings. */
   model?: string
+  /**
+   * Absolute path to a Codex executable run as `<codexBin> app-server --stdio`;
+   * omitted to run the bundled package-local wrapper.
+   */
+  codexBin?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.

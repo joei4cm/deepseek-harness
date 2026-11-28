@@ -129,11 +129,15 @@ export function codexStartupFailure(cause: unknown): Error {
 }
 
 /**
- * Fixed package-local app-server command, independent of the host `PATH`.
- * @returns Node, the official wrapper, and the fixed app-server arguments.
+ * App-server command, independent of the host `PATH`.
+ * @param codexBin - validated absolute Codex executable; omitted to run the
+ * package-local wrapper under the Host's Node.
+ * @returns the selected executable and the fixed app-server arguments.
  */
-export function codexAppServerArgv(): string[] {
-  return [process.execPath, CODEX_PACKAGE_BIN, 'app-server', '--stdio']
+export function codexAppServerArgv(codexBin?: string): string[] {
+  return codexBin === undefined
+    ? [process.execPath, CODEX_PACKAGE_BIN, 'app-server', '--stdio']
+    : [codexBin, 'app-server', '--stdio']
 }
 
 /** Fully resolved inputs for one Codex app-server run. */
@@ -142,6 +146,8 @@ export interface CodexRunSpec {
   readonly cwd: string
   /** Profile-selected native model; omitted to preserve Codex settings. */
   readonly model?: string
+  /** Profile-selected absolute Codex executable; omitted to run the bundled wrapper. */
+  readonly codexBin?: string
   /** Profile-selected native non-interactive permission mode. */
   readonly permissionMode: CodexPermissionMode
   /** Explicit deployment/test environment layered after the shared scrub. */
@@ -234,7 +240,7 @@ export async function startCodexRun(
   let child: SubprocessHandle
   try {
     child = spec.spawn({
-      argv: codexAppServerArgv(),
+      argv: codexAppServerArgv(spec.codexBin),
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: spec.disposeGraceMs,

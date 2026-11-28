@@ -1,8 +1,9 @@
 import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
 import { randomUUID } from 'node:crypto'
 import { startExternalActivation, externalTestParent } from '../../subagent/tests/external-activation-helpers.ts'
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
@@ -395,6 +396,11 @@ describe('task admission and package contracts', () => {
       'app-server',
       '--stdio',
     ])
+    expect(codexAppServerArgv('/opt/codex/bin/codex')).toEqual([
+      '/opt/codex/bin/codex',
+      'app-server',
+      '--stdio',
+    ])
 
     const lockfile = readFileSync(resolve(root, '../../../pnpm-lock.yaml'), 'utf8')
     for (const packageName of CODEX_PLATFORM_PACKAGES) {
@@ -455,6 +461,86 @@ describe('task admission and package contracts', () => {
     await expect(ctx.plugin(codex, { disposeGraceMs: MAX_TIMER_DELAY_MS + 1 }))
       .rejects.toThrow(`disposeGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
     await ctx.fiber.dispose()
+  })
+
+  it('rejects a configured Codex executable that cannot be launched at load', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-codex-bin-'))
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SessionProjectionRegistry)
+      await mountWorkingDirectoryFixture(ctx)
+      await ctx.plugin(SubagentRuntime)
+      await ctx.plugin(LocalSubprocessRuntime)
+      const directory = join(root, 'codex-dir')
+      mkdirSync(directory)
+      const shim = join(root, 'codex.CMD')
+      writeFileSync(shim, '@echo off\n')
+      const missing = join(root, 'missing-codex')
+      for (const [codexBin, message] of [
+        ['codex', 'codexBin must be an absolute path, got codex'],
+        [shim, `codexBin must name a native executable, not a batch shim: ${shim}`],
+        [missing, `codexBin must name an existing file: ${missing}`],
+        [directory, `codexBin must name an existing file: ${directory}`],
+      ] as const) {
+        await expect(ctx.plugin(codex, { codexBin })).rejects.toThrow(message)
+      }
+      if (process.platform !== 'win32') {
+        const plain = join(root, 'codex-plain')
+        writeFileSync(plain, '#!/bin/sh\n')
+        chmodSync(plain, 0o644)
+        await expect(ctx.plugin(codex, { codexBin: plain }))
+          .rejects.toThrow(`codexBin must be executable: ${plain}`)
+      }
+      expect(ctx.subagents.getProvider('codex')).toBeUndefined()
+    } finally {
+      await ctx.fiber.dispose()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('runs a configured Codex executable instead of the bundled wrapper', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-codex-bin-'))
+    const codexBin = join(root, 'codex')
+    writeFileSync(codexBin, '#!/bin/sh\n')
+    chmodSync(codexBin, 0o755)
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SessionProjectionRegistry)
+      await mountWorkingDirectoryFixture(ctx)
+      await ctx.plugin(SubagentRuntime)
+      await ctx.plugin(LocalSubprocessRuntime)
+      const child = fakeChild()
+      const spawnSpecs: SubprocessSpawnSpec[] = []
+      vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
+        spawnSpecs.push(spec)
+        return child.handle
+      })
+      await ctx.plugin(codex, { codexBin })
+      const starting = startExternalActivation(ctx, 'codex', request())
+      const initialize = await child.peer.nextMethod('initialize')
+      child.peer.respond(initialize, { userAgent: 'codex-cli 0.200.0' })
+      await child.peer.nextMethod('initialized')
+      const threadStart = await child.peer.nextMethod('thread/start')
+      child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
+      const run = await starting
+      const turnStart = await child.peer.nextMethod('turn/start')
+      child.peer.send(
+        { id: turnStart.id, result: { turn: { id: 'turn-1' } } },
+        agentMessage('configured answer', 'final_answer'),
+        turnCompleted('completed'),
+      )
+      await expect(run.result).resolves.toEqual({
+        output: [{ type: 'text', text: 'configured answer' }],
+        stopReason: 'completed',
+      })
+      expect(spawnSpecs.map(spec => spec.argv)).toEqual([
+        [codexBin, 'app-server', '--stdio'],
+      ])
+      await run.dispose()
+    } finally {
+      await ctx.fiber.dispose()
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('keeps named instances, runs, and HMR ownership isolated', async () => {
@@ -590,6 +676,9 @@ describe('task admission and package contracts', () => {
     expect(() => codex.Config({ providerName: '' })).toThrow()
     expect(codex.Config({ model: 'gpt-codex' }).model).toBe('gpt-codex')
     expect(() => codex.Config({ model: '' })).toThrow()
+    expect(codex.Config({}).codexBin).toBeUndefined()
+    expect(codex.Config({ codexBin: '/opt/codex' }).codexBin).toBe('/opt/codex')
+    expect(() => codex.Config({ codexBin: '' })).toThrow()
     expect(codex.Config({}).permissionMode).toBe(DEFAULT_CODEX_PERMISSION_MODE)
     for (const permissionMode of CODEX_PERMISSION_MODES) {
       expect(codex.Config({ permissionMode }).permissionMode).toBe(permissionMode)

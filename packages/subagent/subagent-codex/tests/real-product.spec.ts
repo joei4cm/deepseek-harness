@@ -2,6 +2,7 @@ import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-direc
 import { startExternalActivation } from '../../subagent/tests/external-activation-helpers.ts'
 import { execFile } from 'node:child_process'
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -271,6 +272,37 @@ describe('real @openai/codex 0.153.4 product', () => {
     expect(recorded.body.model).toBe('fixture-model')
     expect(responseInputTexts(recorded.body)).toContain(task)
     await expectQuiescent(harness.handles)
+  }, 60_000)
+
+  it.skipIf(process.platform === 'win32')('runs a configured Codex executable through the real app-server', async () => {
+    const instance = await realInstanceFixture([
+      { kind: 'complete', text: 'CONFIGURED_CODEX_BIN_RESULT' },
+    ])
+    const binRoot = mkdtempSync(join(tmpdir(), 'dsh-codex-bin-'))
+    roots.push(binRoot)
+    const codexBin = join(binRoot, 'codex')
+    writeFileSync(codexBin, `#!/bin/sh\nexec '${process.execPath}' '${codexEntry}' "$@"\n`)
+    chmodSync(codexBin, 0o755)
+    const { ctx, handles, spawnSpecs } = await realRuntime()
+    await ctx.plugin(codex, { codexBin, env: instance.env, disposeGraceMs: 2_000 })
+    const run = await startExternalActivation(ctx, 'codex', {
+      prompt: [{ type: 'text', text: 'Return the fixture sentinel exactly.' }],
+      parent: {
+        id: 'real-parent',
+        session: { header: { cwd: instance.workspace } },
+      } as unknown as Agent,
+      signal: new AbortController().signal,
+    })
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'CONFIGURED_CODEX_BIN_RESULT' }],
+      stopReason: 'completed',
+    })
+    await run.dispose()
+    expect(spawnSpecs.map(spec => spec.argv)).toEqual([
+      [codexBin, 'app-server', '--stdio'],
+    ])
+    expect(instance.fixture.requests).toHaveLength(1)
+    await expectQuiescent(handles)
   }, 60_000)
 
   it('fails a missing platform payload without falling back to a host codex', async () => {
