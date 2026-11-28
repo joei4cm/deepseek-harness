@@ -82,3 +82,4 @@ The `discussions/` directory holds reply drafts for upstream Discussions, ready 
 | `72-session-query-live-event-clone.md` | `fix/session-query-live-event-clone` | upstream `master`, dsh-v0.2.3-alpha.2 | `#13499` |
 | `73-session-follow-rebaseline-coalesce.md` | `fix/session-follow-rebaseline-coalesce` | upstream `master`, dsh-v0.2.3-alpha.2 | `#11272` |
 | `74-llm-deepseek-attachment-read-failure.md` | `fix/llm-deepseek-attachment-read-failure` | upstream `master` `841f76d3c5` | `#14482` |
+| `75-ptc-workspace-root-retirement.md` | `fix/ptc-workspace-root-retirement` | upstream `master` `841f76d3c5` | `#14495` |
