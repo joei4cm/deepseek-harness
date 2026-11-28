@@ -253,7 +253,6 @@ function projectSource<Value>(
 }
 
 function sourceLive(session: Session): LogicalSessionSource {
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return { header: session.header, events: session.snapshotEvents() }
 }
 
@@ -310,7 +309,6 @@ function snapshotLive(session: Session): LogicalSession {
     inheritedEventCount: session.inheritedEventCount,
     // The live log is already deeply frozen: snapshotEvents shares a frozen
     // snapshot cached until the next append, so a read never re-clones history.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     events: session.snapshotEvents(),
   }
 }
