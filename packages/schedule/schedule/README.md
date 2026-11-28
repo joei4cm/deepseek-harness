@@ -178,7 +178,7 @@ Management and delivery writes share one Host FIFO. Mutations recheck cancellati
 
 History stays with the task and is pruned only on append. Missing old history keeps the latest receipt and marks earlier records unavailable. Historical Session-log `schedule/change` events retain their frozen types as recorded data; Schedule does not interpret them, warn about them, or import them into the Host store.
 
-`archiveAdmission()` reports active tasks whose `session` or reserved `new_once` target has the matching Session id. Stop deletes the set in one domain batch inside the same FIFO. A rejected batch announces `schedule/changed` so observers read the catalog again; an `unknown-state` failure quarantines the domain until it is reopened. Delivery refuses archived destination Sessions, including reserved retries. Reads and deletion never activate Sessions. Shutdown drains accepted work and notices before closing storage.
+`archiveAdmission()` reports active tasks whose `session` or reserved `new_once` target has the matching Session id. Stop deletes the set in one domain batch inside the same FIFO. A rejected batch announces `schedule/changed` so observers read the catalog again; an `unknown-state` failure quarantines the domain until it is reopened. Delivery refuses archived destination Sessions, including reserved retries. Reads and deletion never activate Sessions. Shutdown drains accepted work and notices before closing storage, and the admission and its stop stay usable until that drain has finished.
 
 </details>
 

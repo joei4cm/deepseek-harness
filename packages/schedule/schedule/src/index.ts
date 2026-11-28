@@ -240,6 +240,8 @@ export class ScheduleService extends TypertRemoteService {
   private runtime: ScheduleRuntime | undefined
   private resolveWebAgent: ((sessionId: SessionId) => Promise<Agent>) | undefined
   private stopping = false
+  /** Settles when this service's own drain has finished, so its teardown can wait for it. */
+  private readonly drained = Promise.withResolvers<void>()
 
   /**
    * @param ctx - Host services owning storage, dispatch, and Session restoration.
@@ -283,6 +285,10 @@ export class ScheduleService extends TypertRemoteService {
         throw error
       }
       return domain
+    }).catch((error: unknown) => {
+      // No domain is kept, so no drain will run; release the teardown that waits for it.
+      this.drained.resolve()
+      throw error
     })
     this.initialized = ctx.effect(async () => {
       const domain = await this.ready
@@ -290,13 +296,18 @@ export class ScheduleService extends TypertRemoteService {
       try {
         cleanup = ctx.effect(() => async () => {
           this.stopping = true
-          await this.runtime?.dispose()
-          await this.chain // The chain contains failures after returning them to their callers.
-          await this.notifications // Each notice contains its own delivery failure.
-          await domain.close()
+          try {
+            await this.runtime?.dispose()
+            await this.settleQueue() // A stop that arrives during the drain still reaches its rows.
+            await this.notifications // Each notice contains its own delivery failure.
+            await domain.close()
+          } finally {
+            this.drained.resolve()
+          }
         })
       } catch (error) {
         this.stopping = true
+        this.drained.resolve()
         await domain.close()
         throw error
       }
@@ -321,24 +332,27 @@ export class ScheduleService extends TypertRemoteService {
     // stored rows rather than a live runtime: an idle Session that an active task
     // still targets refuses the archive, and an archiving stop deletes those
     // rows instead of letting them deliver into a closed Session.
-    ctx.effect(() => {
-      const activity = ctx.on('workspace/session-activity', async ({ sessionId }, next) => {
-        const active = activeSessionTasks(await this.getDomain(), sessionId)
-        const rest = await next()
-        if (active.length === 0) return rest
-        const own: SessionActivity = {
-          kind: 'schedule',
-          items: active.map(task => ({ id: task.record.id, label: task.record.title })),
-        }
-        return [own, ...rest]
-      })
-      const stop = ctx.on('workspace/session-stop', async ({ sessionId }) => {
-        await this.stopSessionTasks(sessionId)
-      })
-      return () => {
-        stop()
-        activity()
+    const activity = ctx.on('workspace/session-activity', async ({ sessionId }, next) => {
+      const active = activeSessionTasks(await this.getDomain(), sessionId)
+      const rest = await next()
+      if (active.length === 0) return rest
+      const own: SessionActivity = {
+        kind: 'schedule',
+        items: active.map(task => ({ id: task.record.id, label: task.record.title })),
       }
+      return [own, ...rest]
+    })
+    const stop = ctx.on('workspace/session-stop', async ({ sessionId }) => {
+      await this.stopSessionTasks(sessionId)
+    })
+    const drained = this.drained
+    // One composed effect owns both listeners: they stay installed until this
+    // service's own drain has finished, so an archive that races the unload
+    // still sees the rows this service holds.
+    ctx.effect(function* () {
+      yield activity
+      yield stop
+      yield async () => { await drained.promise }
     }, 'schedule.archiveAdmission()')
   }
 
@@ -753,7 +767,9 @@ export class ScheduleService extends TypertRemoteService {
    * @param sessionId - Session whose active Host tasks must stop.
    */
   private async stopSessionTasks(sessionId: SessionId): Promise<void> {
-    await this.serialize(async () => {
+    // An archiving stop joins the queue even while this service drains: the rows
+    // it removes have to be gone before the domain closes.
+    await this.enqueue(async () => {
       const domain = await this.getDomain()
       const active = activeSessionTasks(domain, sessionId)
       if (active.length === 0) return
@@ -795,9 +811,30 @@ export class ScheduleService extends TypertRemoteService {
 
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     if (this.stopping) return Promise.reject(new Error('Schedule service is stopping'))
+    return this.enqueue(work)
+  }
+
+  /**
+   * Join the queue behind earlier work, without the teardown gate.
+   *
+   * A removal requested while this service drains still has to reach the rows it
+   * removes, so it queues behind the work that is already running.
+   * @param work - Operation to run in the next queue slot.
+   * @returns The operation's result.
+   */
+  private enqueue<T>(work: () => Promise<T>): Promise<T> {
     const pending = this.chain.then(work)
     this.chain = pending.catch(() => undefined) // Preserve FIFO progress after the caller receives the failure.
     return pending
+  }
+
+  /** Wait until the queue holds no work that arrived while the wait ran; a failed slot already returned its failure to its caller. */
+  private async settleQueue(): Promise<void> {
+    for (;;) {
+      const seen = this.chain
+      await seen
+      if (seen === this.chain) return
+    }
   }
 }
 
