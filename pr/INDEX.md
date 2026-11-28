@@ -64,6 +64,7 @@ This branch holds pull-request descriptions that are ready to open but are not o
 | `58-subprocess-runner-stderr-diagnostic.md` | `fix/subprocess-runner-stderr-diagnostic` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14442` |
 | `59-app-boot-bootstrap-include-marker.md` | `fix/app-boot-bootstrap-include-marker` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14446` |
 | `60-auto-review-reasoning-effort.md` | `fix/auto-review-reasoning-effort` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14422` |
+| `61-terminal-web-links.md` | `feat/terminal-web-links` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14456` |
 
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
