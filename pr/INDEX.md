@@ -76,3 +76,4 @@ The `discussions/` directory holds reply drafts for upstream Discussions, ready 
 | `66-subagent-persistence-withdrawal-children.md` | `fix/subagent-persistence-withdrawal-children` | upstream `master`, dsh-v0.2.3-alpha.2 | — |
 | `67-agent-loop-persistence-withdrawal-agents.md` | `fix/agent-loop-persistence-withdrawal-agents` | upstream `master`, dsh-v0.2.3-alpha.2 | — |
 | `68-compaction-failed-summary-shadow.md` | `fix/compaction-failed-summary-shadow` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14472` |
+| `69-flock-linux-libc-probe.md` | `fix/flock-linux-libc-probe` | upstream `master`, dsh-v0.2.3-alpha.2 | `#6441` |
