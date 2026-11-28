@@ -46,12 +46,17 @@ interface CommonJsModule {
   _load(request: string, parent: NodeJS.Module | null | undefined, isMain?: boolean, ...options: unknown[]): unknown
 }
 
+interface RealpathHelpers {
+  purgeRealpathCacheForPrefix?(this: void, prefix: string): void
+}
+
 interface NativeAccess {
   binding: PackageBinding
   reader: PackageReader
   ResolveCache: ResolveCacheClass
   cjs: CommonJsModule
   esmLoader: { resolveSync(...args: unknown[]): unknown }
+  purgeRealpathCacheForPrefix(prefix: string): void
 }
 
 /** Snapshot own methods; each disposer restores its method only while its replacement is still installed. */
@@ -88,12 +93,19 @@ function loadNodeInternals(): NativeAccess {
   const esm = requireInternal('internal/modules/esm/loader') as {
     getOrInitializeCascadedLoader(): NativeAccess['esmLoader']
   }
+  const helpers = requireInternal('internal/modules/helpers') as RealpathHelpers | undefined
+  const purgeRealpathCache = helpers?.purgeRealpathCacheForPrefix
   return {
     binding: realm.internalBinding('modules'),
     reader: requireInternal('internal/modules/package_json_reader') as PackageReader,
     ResolveCache: (requireInternal('internal/modules/esm/module_map') as { ResolveCache: ResolveCacheClass }).ResolveCache,
     cjs: (requireInternal('internal/modules/cjs/loader') as { Module: CommonJsModule }).Module,
     esmLoader: esm.getOrInitializeCascadedLoader(),
+    purgeRealpathCacheForPrefix(prefix) {
+      /* v8 ignore if -- Node 24 exposes no realpath cache purge helper; the test installs a recording stand-in. */
+      if (purgeRealpathCache === undefined) return
+      Reflect.apply(purgeRealpathCache, helpers, [prefix])
+    },
   }
 }
 
@@ -153,6 +165,7 @@ export class PackageManifests {
     this.directories.add(directory)
     this.configurations.clear()
     this.realDirectories.clear()
+    native.purgeRealpathCacheForPrefix(directory)
     // A package's entry may resolve outside its directory; cache keys do not record the manifests they consulted.
     for (const key of Object.keys(native.cjs._pathCache)) Reflect.deleteProperty(native.cjs._pathCache, key)
     const directoryURL = pathToFileURL(directory).href + '/'

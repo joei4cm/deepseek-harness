@@ -11,6 +11,9 @@ import { PackageManifests } from '../src/package-manifest.ts'
 
 const require = createRequire(import.meta.url)
 const addon = require('node-addon-require-builtin') as { requireBuiltin(id: string): unknown }
+const realpathHelpers = addon.requireBuiltin('internal/modules/helpers') as {
+  purgeRealpathCacheForPrefix?: (prefix: string) => void
+}
 const reader = addon.requireBuiltin('internal/modules/package_json_reader') as {
   read: (path: string, options?: { isESM: boolean; base: string; specifier: string }) => { exists: boolean; type: string }
   getPackageScopeConfig: (url: string) => { exists: boolean; type: string; pjsonPath: string }
@@ -302,6 +305,23 @@ describe('package manifest reader parity', { concurrent: false }, () => {
     file(f.manifest, '{"type":"module"}')
     await f.invalidate(f.manifest)
     expect(reader.read(linkedManifest).type).toBe('module')
+  })
+
+  it('purges Node realpath entries below an invalidated package', () => {
+    const f = fixture()
+    const purged: string[] = []
+    const native = realpathHelpers.purgeRealpathCacheForPrefix
+    // Node 24 exposes no purge helper; a recording stand-in keeps the call contract observable there.
+    realpathHelpers.purgeRealpathCacheForPrefix = (prefix: string) => {
+      purged.push(prefix)
+      native?.(prefix)
+    }
+    cleanup.push(() => {
+      if (native === undefined) delete realpathHelpers.purgeRealpathCacheForPrefix
+      else realpathHelpers.purgeRealpathCacheForPrefix = native
+    })
+    f.manifests.invalidate(f.manifest)
+    expect(purged).toEqual([f.dir])
   })
 
   it.each([
