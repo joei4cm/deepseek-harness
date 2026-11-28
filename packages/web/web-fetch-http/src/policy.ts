@@ -42,7 +42,7 @@ export function parseFetchUrl(input: string): URL {
 /**
  * Validate a request URL against the provider's complete pre-network policy:
  * bounded length plus the restrictions enforced by {@link parseFetchUrl}.
- * Public-address resolution and connection pinning run after this check.
+ * Every destination address is allowed; the system resolver chooses it.
  *
  * @param input - the raw URL string from the fetch request.
  * @returns the parsed `URL`.
