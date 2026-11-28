@@ -3,6 +3,7 @@ import Sessions, { type SessionId } from '@deepseek-ai/dsh-session'
 import SandboxPolicy, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { join } from 'node:path'
 import { PolicyProcesses } from '../src/policy-processes.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
 
@@ -96,4 +97,98 @@ it('cleans an explicit policy resource without a mounted Session store', async (
   processes.register({ sessionId: brandString<SessionId>('external'), mode: 'read-only', workspaceRoot: process.cwd() }, release)
   await ctx.fiber.dispose()
   expect(release).toHaveBeenCalledTimes(1)
+})
+
+it('retires a retained process after its evaluation settles when the workspace root moves', async () => {
+  const { session, processes, policy } = await setup()
+  const settled = Promise.withResolvers<undefined>()
+  const release = vi.fn(async () => {})
+  const detach = processes.register(policy, release, () => settled.promise)
+  try {
+    session.append('workspace-root/change', { cwd: policy.workspaceRoot })
+    expect(release).not.toHaveBeenCalled()
+    session.append('workspace-root/change', { cwd: join(policy.workspaceRoot, 'moved') })
+    expect(release).not.toHaveBeenCalled()
+    let admitted = false
+    const waiting = processes.wait(session.id).then(() => { admitted = true })
+    await Promise.resolve()
+    expect(admitted).toBe(false)
+    settled.resolve(undefined)
+    await waiting
+    expect(release).toHaveBeenCalledTimes(1)
+    await processes.wait(session.id)
+  } finally { detach(); settled.resolve(undefined) }
+})
+
+it('leaves a per-call admission running when the workspace root moves', async () => {
+  const { session, processes, policy } = await setup()
+  const release = vi.fn(async () => {})
+  const detach = processes.register(policy, release)
+  try {
+    session.append('workspace-root/change', { cwd: join(policy.workspaceRoot, 'moved') })
+    expect(release).not.toHaveBeenCalled()
+    await processes.wait(session.id)
+    expect(release).not.toHaveBeenCalled()
+  } finally { detach() }
+})
+
+it('escalates a deferred root retirement to immediate release on a mode change', async () => {
+  const { ctx, session, processes, policy } = await setup()
+  const settled = Promise.withResolvers<undefined>()
+  const release = vi.fn(async () => {})
+  const warning = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+  const detach = processes.register(policy, release, () => settled.promise)
+  try {
+    session.append('workspace-root/change', { cwd: join(policy.workspaceRoot, 'moved') })
+    setSandboxMode(session, 'read-only')
+    expect(release).toHaveBeenCalledTimes(1)
+    settled.resolve(undefined)
+    await processes.wait(session.id)
+    expect(release).toHaveBeenCalledTimes(1)
+  } finally { detach(); settled.resolve(undefined); warning.mockRestore() }
+})
+
+it('rejects admission and warns when a deferred release fails after settlement', async () => {
+  const { ctx, session, processes, policy } = await setup()
+  const settled = Promise.withResolvers<undefined>()
+  const warning = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+  const failure = new Error('deferred cleanup failed')
+  const release = vi.fn(async (): Promise<void> => { throw failure })
+  const detach = processes.register(policy, release, () => settled.promise)
+  try {
+    session.append('workspace-root/change', { cwd: join(policy.workspaceRoot, 'moved') })
+    settled.resolve(undefined)
+    await expect(processes.wait(session.id)).rejects.toThrow(failure)
+    expect(warning).toHaveBeenCalledWith(failure)
+    release.mockImplementation(async () => {})
+    await processes.wait(session.id)
+    expect(release).toHaveBeenCalledTimes(2)
+  } finally { detach(); settled.resolve(undefined); warning.mockRestore() }
+})
+
+it('awaits a retirement that starts while an earlier one is pending', async () => {
+  const { session, processes, policy } = await setup()
+  const first = Promise.withResolvers<undefined>()
+  const second = Promise.withResolvers<undefined>()
+  const release = vi.fn(async () => {})
+  const detachFirst = processes.register(policy, release, () => first.promise)
+  const moved = join(policy.workspaceRoot, 'first-move')
+  session.append('workspace-root/change', { cwd: moved })
+  let admitted = false
+  const waiting = processes.wait(session.id).then(() => { admitted = true })
+  await Promise.resolve()
+  // The first retirement is still settling when the session moves again and a
+  // process started under the intermediate root needs retirement too.
+  const detachSecond = processes.register({ ...policy, workspaceRoot: moved }, release, () => second.promise)
+  session.append('workspace-root/change', { cwd: join(moved, 'second-move') })
+  first.resolve(undefined)
+  // The first retirement settles while the second stays pending; admission keeps waiting.
+  await vi.waitFor(() => { expect(release).toHaveBeenCalledTimes(1) })
+  expect(admitted).toBe(false)
+  second.resolve(undefined)
+  await waiting
+  expect(release).toHaveBeenCalledTimes(2)
+  await processes.wait(session.id)
+  detachFirst()
+  detachSecond()
 })

@@ -324,6 +324,10 @@ export function createRunCodeTransport(
         if (args.timeoutMs !== undefined && (!Number.isFinite(args.timeoutMs) || args.timeoutMs <= 0)) {
           throw new ToolArgsError(['invalid timeoutMs: expected a positive finite number'])
         }
+        // Resolve the directory first: its validation may commit a workspace-root recovery, and
+        // the standing policy must then carry the root the program runs under.
+        const cwd = await resolveWorkingDirectory(ctx, { ...exec, signal: callSignal })
+        callSignal.throwIfAborted()
         const standingPolicy = runtime.sandboxMode === undefined ? undefined : resolveSandboxPolicy(ctx, exec)
         let policy = standingPolicy
         if (args.sandbox_permissions !== undefined && args.justification !== undefined) {
@@ -339,8 +343,6 @@ export function createRunCodeTransport(
           })
           policy = { ...confined, mode: approvedMode }
         }
-        const cwd = await resolveWorkingDirectory(ctx, { ...exec, signal: callSignal })
-        callSignal.throwIfAborted()
 
         // The run-scoped abort: follows the outer signal in, and fires when the
         // run settles for ANY reason, so an in-flight sub-dispatch is aborted

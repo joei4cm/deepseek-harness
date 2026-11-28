@@ -54,6 +54,7 @@ export class ProgramWorker {
   private starting?: Promise<void>
   private exitOutcome?: SubprocessOutcome
   private readonly images = new Map<string, PtcImage['attachment']>()
+  private readonly idleWaiters = new Set<() => void>()
   private readonly controller = new AbortController()
   closed = false
 
@@ -75,7 +76,17 @@ export class ProgramWorker {
     readonly policy: SandboxExecutionPolicy, processes: PolicyProcesses, private readonly mode: ExecutionMode,
     private readonly retainsState: boolean, private pendingInitialization: string | undefined,
   ) {
-    this.unregister = processes.register(policy, () => this.dispose())
+    this.unregister = processes.register(policy, () => this.dispose(), this.retainsState ? () => this.whenIdle() : undefined)
+  }
+
+  /**
+   * Resolve after the running evaluation settles. Retiring a retained process on a workspace-root
+   * move defers its release until then, so the evaluation that requested the move completes.
+   * @returns Completion of the running evaluation, or an already idle worker.
+   */
+  private whenIdle(): Promise<void> {
+    if (!this.running) return Promise.resolve()
+    return new Promise<void>((resolve) => { this.idleWaiters.add(resolve) })
   }
 
   /** Reject reuse until the previous evaluation and required cleanup settle. */
@@ -101,7 +112,12 @@ export class ProgramWorker {
           result.error?.message.toLowerCase().includes(signature.toLowerCase()))
       }
       return { ...result, sandbox }
-    } finally { this.running = false }
+    } finally {
+      this.running = false
+      const waiters = [...this.idleWaiters]
+      this.idleWaiters.clear()
+      for (const resolve of waiters) resolve()
+    }
   }
 
   private message(message: string): string {

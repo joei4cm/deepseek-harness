@@ -10,7 +10,10 @@ import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mountRuntime } from './setup.ts'
 import type { Config } from '../src/index.ts'
+import type { PtcBindingNamespace } from '@deepseek-ai/dsh-ptc-runtime'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 
 /** Both retained REPL evaluators: Node's REPL and the scoped REPL. */
 const repls = [
@@ -108,6 +111,37 @@ describe.each(repls)('retained REPL with scoped REPL $replScoped', (repl) => {
     const denied = await run('await (await import("node:fs/promises")).writeFile("denied-after-switch.txt", "denied")')
     expect(denied.sandbox).toMatchObject({ mode: 'read-only', denied: true })
     await expect(readFile(join(cwd, 'denied-after-switch.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('retires the retained process after a workspace move and admits the next program under the new root', async () => {
+    const { root, cwd, ctx, runtime, owner } = await setup('workspace-write', repl)
+    const moved = join(root, 'moved')
+    await mkdir(moved)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(WorkingDirectory)
+    const session = ctx.sessions.create(brandString<SessionId>('retained-root-move'), { meta: { cwd } })
+    const run = (program: string, bindings: PtcBindingNamespace[] = []) => runtime.run(runtime.resolve({
+      program, bindings, stateOwner: owner, sandboxPolicy: ctx.sandboxPolicy.resolve({ session }),
+    }))
+    const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+    onTestFinished(() => { spawn.mockRestore() })
+    expect((await run('const retained = 7; retained')).value).toBe(7)
+    const started = spawn.mock.results[0]
+    if (started?.type !== 'return') throw new Error('the retained process did not start')
+    // The program that moves the workspace keeps its own result; the move retires the process only
+    // after this evaluation settles.
+    const moving = run('await tools.move({})', [{
+      global: 'tools',
+      functions: { move: async () => { session.append('workspace-root/change', { cwd: moved }); return 'moved' } },
+    }])
+    expect((await moving).value).toBe('moved')
+    const next = await run('typeof retained')
+    expect(next.value).toBe('undefined')
+    await started.value.done
+    expect((await run('await (await import("node:fs/promises")).writeFile("after-move.txt", "ok"); "written"')).error).toBeUndefined()
+    expect(await readFile(join(moved, 'after-move.txt'), 'utf8')).toBe('ok')
+    const denied = await run(`await (await import("node:fs/promises")).writeFile(${JSON.stringify(join(cwd, 'denied.txt'))}, "denied")`)
+    expect(denied.sandbox).toMatchObject({ mode: 'workspace-write', denied: true })
   })
 
   it('keeps a one-shot wider policy separate from standing variables and subsequent writes', async () => {

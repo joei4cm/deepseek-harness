@@ -17239,6 +17239,9 @@ importers:
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:*
         version: link:../../util/timeout
+      '@deepseek-ai/dsh-working-directory':
+        specifier: workspace:*
+        version: link:../../session/working-directory
 
   packages/sandbox/sandbox:
     dependencies:
