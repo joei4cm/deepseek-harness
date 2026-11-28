@@ -84,3 +84,4 @@ The `discussions/` directory holds reply drafts for upstream Discussions, ready 
 | `74-llm-deepseek-attachment-read-failure.md` | `fix/llm-deepseek-attachment-read-failure` | upstream `master` `841f76d3c5` | `#14482` |
 | `75-ptc-workspace-root-retirement.md` | `fix/ptc-workspace-root-retirement` | upstream `master` `841f76d3c5` | `#14495` |
 | `76-hmr-purge-stale-realpath-cache.md` | `fix/hmr-purge-stale-realpath-cache` | upstream `master` `841f76d3c5` | `#14501` |
+| `77-terminal-bash-sandbox-fence-live-policy.md` | `fix/terminal-bash-sandbox-fence-live-policy` | upstream `master` `841f76d3c5` | `#13356` |
