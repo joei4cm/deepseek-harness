@@ -494,32 +494,38 @@ function commitCompactionBody(
   const callRecord = summarized.llmStreamCall === true
     ? { rawOutput: summarized.rawOutput, llmStreamCall: true as const }
     : summarized.rawOutput === undefined ? {} : { rawOutput: summarized.rawOutput }
-  const summaryEvent = session.append('compaction/summary', {
-    compactionId: startEvent.data.compactionId,
-    ...startEvent.data.sourceCommandId === undefined
-      ? {}
-      : { sourceCommandId: startEvent.data.sourceCommandId },
-    summary,
-    ...callRecord,
-    shadowedRange: { start, end },
-    shadowedSeqs: [...shadowedSeqs],
-    shadowedTokenCount,
-    provider,
-    model,
-    ...maxTokens === undefined ? {} : { maxTokens },
-    ...usage === undefined ? {} : { usage },
-  })
-  session.append('user/message', checkpointMessage, {
-    surfaceOp: { op: 'replace', startSeq: start, endSeq: end },
-    sourceEventSeqs: [startEvent.seq, summaryEvent.seq, ...shadowedSeqs],
-  })
+  // The summary and the checkpoint that shadows its span form one group: a
+  // rejected checkpoint must leave no summary behind, because a summary
+  // without its checkpoint claims a shadow the session never performed.
+  const summarySeq = SessionSeq(session.seq)
+  session.append([
+    ['compaction/summary', {
+      compactionId: startEvent.data.compactionId,
+      ...startEvent.data.sourceCommandId === undefined
+        ? {}
+        : { sourceCommandId: startEvent.data.sourceCommandId },
+      summary,
+      ...callRecord,
+      shadowedRange: { start, end },
+      shadowedSeqs: [...shadowedSeqs],
+      shadowedTokenCount,
+      provider,
+      model,
+      ...maxTokens === undefined ? {} : { maxTokens },
+      ...usage === undefined ? {} : { usage },
+    }],
+    ['user/message', checkpointMessage, {
+      surfaceOp: { op: 'replace', startSeq: start, endSeq: end },
+      sourceEventSeqs: [startEvent.seq, summarySeq, ...shadowedSeqs],
+    }],
+  ])
   return {
     compactionId: startEvent.data.compactionId,
     ...startEvent.data.sourceCommandId === undefined
       ? {}
       : { sourceCommandId: startEvent.data.sourceCommandId },
     startSeq: startEvent.seq,
-    summarySeq: summaryEvent.seq,
+    summarySeq,
     summary,
     shadowedRange: { start, end },
     shadowedSeqs: [...shadowedSeqs],

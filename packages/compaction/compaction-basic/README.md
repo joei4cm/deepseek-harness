@@ -134,7 +134,7 @@ Failed summary requests dispatch synchronous `compaction/summary-error` after ch
 
 After validating the range and durable lock, the transaction appends `compaction/start`. The summarizer receives the initial system message and the selected conversation as they appear on the surface. Compaction does not evaluate current system sources. The system-prompt service rebuilds the instructions from current sources before the next conversation model attempt, including a retry after overflow recovery.
 
-The transaction checks that the whole surface (automatic calls) or selected range (manual calls) is stable and that the framed summary is smaller than the selected range. It appends adjacent `compaction/summary` and replacement `user/message` events. The initial system message and messages outside the selected range remain unchanged. Exactly one `compaction/end` attempt follows. An unmatched start before a newer `session/end-seed` is stale. An unmatched start after that boundary reports `busy`. Cancellation remains authoritative after cleanup and durability.
+The transaction checks that the whole surface (automatic calls) or selected range (manual calls) is stable and that the framed summary is smaller than the selected range. It appends `compaction/summary` and the replacement `user/message` as one admitted group, so a rejected replacement leaves no summary claiming a shadow the session never performed. The initial system message and messages outside the selected range remain unchanged. Exactly one `compaction/end` attempt follows. An unmatched start before a newer `session/end-seed` is stale. An unmatched start after that boundary reports `busy`. Cancellation remains authoritative after cleanup and durability.
 
 ### Config resolution
 

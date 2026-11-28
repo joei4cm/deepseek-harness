@@ -8,7 +8,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { freezeMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent, SessionSeq, ToolResultMessage } from '@deepseek-ai/dsh-session'
+import { SessionSeq, type Session, type SessionEvent, type ToolResultMessage } from '@deepseek-ai/dsh-session'
 // Type-only: the `compaction/*` SessionEventMap merges (the shadow-price event).
 import type {} from '@deepseek-ai/dsh-compaction'
 // Type-only: the `ctx.tokenMeter` Context merge for the declared injection.
@@ -157,21 +157,26 @@ export class ToolResultPruner extends Service {
       // Shadow-price protocol: the metering event and its replacement are
       // appended synchronously adjacent, so pure consumers subtract the
       // shadowed node's heuristic price without retaining per-node state.
-      session.append('compaction/prune', {
-        shadowedRange: { start: seq, end: seq },
-        shadowedSeqs: [seq],
-        shadowedTokenCount: this.ctx.tokenMeter.estimateMessage(original),
-      })
-      const replacement = session.append('tool/result', {
-        ...event.data,
-        message,
-      }, {
-        surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq },
-        sourceEventSeqs: [seq],
-      })
+      // Both rows form one group: a rejected replacement leaves no pricing
+      // row claiming a shadow the surface never performed.
+      const replacementSeq = SessionSeq(session.seq + 1)
+      session.append([
+        ['compaction/prune', {
+          shadowedRange: { start: seq, end: seq },
+          shadowedSeqs: [seq],
+          shadowedTokenCount: this.ctx.tokenMeter.estimateMessage(original),
+        }],
+        ['tool/result', {
+          ...event.data,
+          message,
+        }, {
+          surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq },
+          sourceEventSeqs: [seq],
+        }],
+      ])
       pruned.push({
         originalSeq: seq,
-        replacementSeq: replacement.seq,
+        replacementSeq,
         callId: event.data.message.source.callId,
         charsBefore,
         charsAfter,

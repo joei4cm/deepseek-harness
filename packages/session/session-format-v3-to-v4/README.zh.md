@@ -242,7 +242,7 @@ System image 接纳要求非空 attachment id、PNG／JPEG／WebP／GIF MIME 类
 | `llm/retry`、`llm/retry-started` | 匹配当前请求 provider 和 turn／step，每条策略链的尝试连续、retry 身份稳定，每次 start 匹配一个先前已调度的尝试。 |
 | `session/title`、`session/title-llm-request` | 引用互异且更早的真人 `user/message` 事件。用户指定标题没有引用；其他标题具有引用。LLM 标题请求带非空引用和一个来源为 `dsh-session-title-llm` 的 user 角色文本消息。 |
 | `command/run`、`command/done` | Run id 唯一；完成记录对应先前 run。存在的完成 `sourceEventSeq` 引用更早的非 command 事件，并伴随 success。 |
-| `compaction/start`、`compaction/summary`、`compaction/end` | 匹配 compaction id、源 command 和活动 turn 上下文。Summary 区间引用精确的当前表面节点且排除 protected head；成功完成需要一个 summary。继承的未完成 compaction 在 end-seed marker 处过期。 |
+| `compaction/start`、`compaction/summary`、`compaction/end` | 匹配 compaction id、源 command 和活动 turn 上下文。Summary 区间引用精确的当前表面节点且排除 protected head；成功完成需要一个 summary。未完成运行的 summary 没有声明任何遮蔽，因此豁免区间规则。继承的未完成 compaction 在 end-seed marker 处过期。 |
 | `compaction/prune` | 其区间引用精确的当前表面节点且排除 protected head；它不要求存在 compaction 事务或其所有者字段。 |
 | Compact checkpoint 替换 | 其 `compact-checkpoint` 来源标识活动 compaction。 |
 | 原生 `subagent/catalog` | 校验继承截点之后的自身 version-0 至 version-3 载荷；version 3 仅由原生写入，为 continuable 或 external 条目增加子代理名称。每个子 id 和 version-3 同级名称必须唯一。名称由 1–32 个小写字母、数字或连字符组成，以字母开头，且不能为 `lead`。原生读取不收集子日志，也不比较其物理事实；继承条目不建立自身成员关系。 |

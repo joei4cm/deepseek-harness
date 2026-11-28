@@ -240,6 +240,34 @@ function compactEvents(session: Session): SessionEvent[] {
   return session.snapshotEvents().filter(event => event.type.startsWith('compaction/'))
 }
 
+/**
+ * Reject the compaction summary group. The summary and its checkpoint are one
+ * append, so a rejected summary takes the whole group with it.
+ */
+function rejectCompactionSummaryGroup(session: Session, message: string): void {
+  const append = session.append.bind(session)
+  vi.spyOn(session, 'append').mockImplementation(((type: string | readonly unknown[], ...rest: never[]) => {
+    if (Array.isArray(type) && type.some(member => (member as readonly unknown[])[0] === 'compaction/summary')) {
+      throw new Error(message)
+    }
+    return (append as (...args: never[]) => unknown)(type as never, ...rest)
+  }) as never)
+}
+
+/** Reject the compaction checkpoint, alone or as a member of its group. */
+function rejectCompactionCheckpoint(session: Session, message: string): void {
+  const append = session.append.bind(session)
+  const isCheckpoint = (member: readonly unknown[]): boolean => member[0] === 'user/message'
+    && typeof member[2] === 'object' && member[2] !== null
+    && (member[2] as { surfaceOp?: unknown }).surfaceOp !== undefined
+  vi.spyOn(session, 'append').mockImplementation(((type: string | readonly unknown[], ...rest: never[]) => {
+    if (Array.isArray(type) ? type.some(member => isCheckpoint(member as readonly unknown[])) : isCheckpoint([type, ...rest])) {
+      throw new Error(message)
+    }
+    return (append as (...args: never[]) => unknown)(type as never, ...rest)
+  }) as never)
+}
+
 describe('compactNow through the real loop', () => {
   it('passes logged image omissions to the summarizer without changing the original message', async () => {
     const { ctx, agent, compact } = await loopHarness()
@@ -690,11 +718,7 @@ describe('compactNow transaction and failure classification', () => {
     const session = closedConversation(2)
     let released = 0
     const agent = fakeAgent(session, () => () => { released += 1 })
-    const append = session.append.bind(session)
-    vi.spyOn(session, 'append').mockImplementation(((type: string, ...rest: never[]) => {
-      if (type === 'compaction/summary') throw new Error('summary record rejected')
-      return (append as (...args: never[]) => unknown)(type as never, ...rest)
-    }) as never)
+    rejectCompactionSummaryGroup(session, 'summary record rejected')
 
     const error = await rejection(compact.compactNow(agent, SIGNAL))
     vi.restoreAllMocks()
@@ -703,17 +727,28 @@ describe('compactNow transaction and failure classification', () => {
     const end = session.snapshotEvents().findLast(event => event.type === 'compaction/end')
     expect(end?.type === 'compaction/end' && end.data.error).toContain('summary record rejected')
     expect(end?.type === 'compaction/end' && end.data.turn).toBeNull()
+    expect(compactEvents(session).map(event => event.type)).toEqual(['compaction/start', 'compaction/end'])
+  })
+
+  it('records no summary when the checkpoint cannot be admitted', async () => {
+    const { compact } = detachedService()
+    const session = closedConversation(2)
+    const agent = fakeAgent(session, () => () => undefined)
+    rejectCompactionCheckpoint(session, 'checkpoint rejected')
+
+    const error = await rejection(compact.compactNow(agent, SIGNAL))
+    vi.restoreAllMocks()
+    expect(error.code).toBe('commit')
+    // The summary claims the span its checkpoint shadows, so a rejected
+    // checkpoint must leave no summary behind.
+    expect(compactEvents(session).map(event => event.type)).toEqual(['compaction/start', 'compaction/end'])
   })
 
   it('keeps a commit failure when the durability checkpoint also fails', async () => {
     const { ctx, compact } = detachedService()
     const session = closedConversation(2)
     const agent = fakeAgent(session, () => () => undefined)
-    const append = session.append.bind(session)
-    vi.spyOn(session, 'append').mockImplementation(((type: string, ...rest: never[]) => {
-      if (type === 'compaction/summary') throw new Error('summary record rejected')
-      return (append as (...args: never[]) => unknown)(type as never, ...rest)
-    }) as never)
+    rejectCompactionSummaryGroup(session, 'summary record rejected')
     vi.spyOn(ctx.sessions, 'flush').mockRejectedValueOnce(new Error('disk full'))
 
     const error = await rejection(compact.compactNow(agent, SIGNAL))

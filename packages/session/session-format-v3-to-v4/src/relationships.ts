@@ -64,13 +64,19 @@ class Relationships {
   readonly startedRetries = new Set<string>()
   readonly commands = new Set<string>()
   readonly orphanCompactions = new Set<number>()
+  /** Compaction ids whose run completed successfully, so their summary really shadowed its span. */
+  readonly completedCompactions = new Set<SessionFormatJsonValue | undefined>()
 
   constructor(readonly artifact: SessionFormatArtifact, readonly knownEventTypes: ReadonlySet<string>) {
     let start: number | undefined
     for (const event of artifact.events) {
       if (!knownEventTypes.has(event.type)) continue
       if (event.type === 'compaction/start') start = event.seq
-      if (event.type === 'compaction/end') start = undefined
+      if (event.type === 'compaction/end') {
+        const data = record(event.data, event.type)
+        if (data['error'] === undefined) this.completedCompactions.add(data['compactionId'])
+        start = undefined
+      }
       if (event.type === 'session/end-seed') {
         if (start !== undefined) this.orphanCompactions.add(start)
         start = undefined
@@ -253,6 +259,9 @@ class Relationships {
   }
 
   span(event: SessionFormatEvent, data: SessionFormatJsonObject): void {
+    // A summary of a run that never completed shadowed nothing, so its span is
+    // inert; the checkpoint that would have replaced it never landed.
+    if (event.type === 'compaction/summary' && !this.completedCompactions.has(data['compactionId'])) return
     const range = record(data['shadowedRange'], 'compaction shadowedRange')
     const start = this.surface.indexOf(earlier(range['start'], event.seq, 'compaction range start'))
     const end = this.surface.indexOf(earlier(range['end'], event.seq, 'compaction range end'))

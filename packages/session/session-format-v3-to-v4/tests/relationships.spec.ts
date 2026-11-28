@@ -206,6 +206,18 @@ describe('V4 protected system surface and malformed relationship inputs', () => 
     ]) expect(() => reopen(rows)).toThrow()
   })
 
+  it('accepts the stale summary of a compaction that never completed', () => {
+    const start = row('compaction/start', { compactionId: 'c', turn: 1, sourceCommandId: 'cmd' })
+    const stale = row('compaction/summary', { compactionId: 'c', sourceCommandId: 'cmd', summary: [{ type: 'text', text: 'summary' }], shadowedRange: { start: 2, end: 2 }, shadowedSeqs: [2], shadowedTokenCount: 1, provider: 'mock', model: 'mock' })
+    const failed = row('compaction/end', { compactionId: 'c', sourceCommandId: 'cmd', turn: 1, error: 'surface replace refused' })
+    // The checkpoint that would have shadowed the head never landed, so the
+    // summary of a failed run claims nothing the surface performed.
+    expect(() => reopen([...begin(), system(), input(), start, stale, failed, ...end()])).not.toThrow()
+    // A completed run keeps the strict rule.
+    const completed = row('compaction/end', { compactionId: 'c', sourceCommandId: 'cmd', turn: 1 })
+    expect(() => reopen([...begin(), system(), input(), start, stale, completed, ...end()])).toThrow(/protected system head/)
+  })
+
   it('rejects malformed relationship values and mismatched inherited transaction ownership', () => {
     expect(() => reopen([row('command/run', { commandId: '' })])).toThrow()
     expect(() => reopen([row('session/title', { messageSeqs: null })])).toThrow()
