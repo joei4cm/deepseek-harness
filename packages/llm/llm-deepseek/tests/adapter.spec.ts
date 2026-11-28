@@ -2,7 +2,7 @@
 import * as NativeToolRegistry from '@deepseek-ai/dsh-tool-registry-native'
 import { accountStub } from '../../../account/deepseek-account/tests/account-stub.ts'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -376,6 +376,24 @@ describe('Cordis provider composition', () => {
     await chunks(ctx.llm.stream(options({ model, messages: [{ ...message, content: [...message.content, { type: 'image', attachment }] }] })))
     expect(JSON.stringify(http.requests[0]?.body)).toContain('/mounted/image.png')
     expect(price().priceImages([{ type: 'image', attachment }])[0]?.text).toContain('/mounted/image.png')
+  })
+
+  it('reports a missing attachment object by its attachment code without contacting the provider', async () => {
+    const http = await endpoint()
+    const { ctx, home } = await context()
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(DeepSeekAuth)
+    await ctx.plugin(Messages, { baseURL: http.url })
+    await ctx.plugin(LocalAttachments, { dshHome: home })
+    const attachment = await ctx.attachments.saveImage({ data: await readFile(new URL('fixtures/red.png', import.meta.url)), mediaType: 'image/png' })
+    await rename(join(home, 'attachments'), join(home, 'attachments.old'))
+    const message = user()
+    const output = await chunks(ctx.llm.stream(options({ model: 'deepseek-flash', messages: [{ ...message, content: [...message.content, { type: 'image', attachment }] }] })))
+    expect(output.at(-1)).toMatchObject({
+      type: 'finish', reason: { kind: 'error', failure: { code: 'ATTACHMENT_NOT_FOUND', message: 'Attachment object is missing.' } },
+    })
+    expect(http.requests).toEqual([])
   })
 
   async function boot(...args: Parameters<typeof server>) {
