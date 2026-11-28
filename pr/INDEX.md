@@ -69,3 +69,4 @@ This branch holds pull-request descriptions that are ready to open but are not o
 Each file is the complete pull-request body for its branch: `## Motivation`, `## Changes`, `## Testing`, and `## AI Usage`, in that order.
 
 The `discussions/` directory holds reply drafts for upstream Discussions, ready for the author to review before posting.
+| `62-subagent-codex-config-bin.md` | `feat/subagent-codex-config-bin` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14447` |
