@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { detectLinuxLibc } from '../packages/entry/src/libc.js'
 
 const root = resolve(import.meta.dirname, '..')
 const { values } = parseArgs({ options: { 'host-addon-only': { type: 'boolean' } }, allowPositionals: false })
@@ -29,9 +30,7 @@ if (process.platform !== 'linux' && process.platform !== 'darwin') {
   throw new Error('build: system binaries are built on Linux or macOS; no native target for this host')
 }
 const host = `${process.platform}-${process.arch}`
-const libc = process.platform === 'linux'
-  ? ((process.report.getReport() as { header: { glibcVersionRuntime?: string } }).header.glibcVersionRuntime ? 'glibc' : 'musl')
-  : undefined
+const libc = process.platform === 'linux' ? detectLinuxLibc() : undefined
 const headers = resolve(dirname(process.execPath), '../include/node')
 let built = 0
 

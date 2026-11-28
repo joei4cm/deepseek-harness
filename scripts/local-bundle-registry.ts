@@ -20,6 +20,7 @@ import { join, resolve } from 'node:path'
 import { execa } from 'execa'
 import yaml from 'js-yaml'
 import semver from 'semver'
+import { detectLinuxLibc } from '@deepseek-ai/node-addon-system/libc'
 import { pnpmInvocation } from './pnpm-invocation.ts'
 import { capture, pnpmCommand } from './release/process.ts'
 import { releaseFamily, tarballName, type ReleaseFamily, type ReleaseMember } from './release/families.ts'
@@ -269,8 +270,7 @@ export function platformConstraint(manifest: Record<string, unknown>): PlatformC
  */
 export function hostPlatform(): PlatformConstraint {
   if (process.platform !== 'linux') return { os: [process.platform], cpu: [process.arch] }
-  const report = process.report.getReport() as { header?: { glibcVersionRuntime?: string } }
-  return { os: [process.platform], cpu: [process.arch], libc: [report.header?.glibcVersionRuntime === undefined ? 'musl' : 'glibc'] }
+  return { os: [process.platform], cpu: [process.arch], libc: [detectLinuxLibc()] }
 }
 
 /**

@@ -2,6 +2,7 @@
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { getSystemErrorName } from 'node:util'
+import { detectLinuxLibc } from './libc.js'
 
 interface FlockBinding {
   tryLock(fd: number, callback: (errno: number) => void): void
@@ -21,9 +22,7 @@ function loadBinding(): FlockBinding {
 
   let filename = 'system.node'
   if (platform === 'linux') {
-    // Node's report types omit the libc field supplied by Linux reports.
-    const report = process.report.getReport() as { header: { glibcVersionRuntime?: string } }
-    filename = join(report.header.glibcVersionRuntime ? 'glibc' : 'musl', filename)
+    filename = join(detectLinuxLibc(), filename)
   }
   const require = createRequire(import.meta.url)
   const manifest = require.resolve(`@deepseek-ai/node-addon-system-${platform}-${arch}/package.json`)

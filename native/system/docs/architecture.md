@@ -16,6 +16,8 @@ The `./landlock-run` entry owns Landlock path resolution, grant argv, and the fu
 
 The descriptor belongs to the caller and must stay open through completion. The binding neither opens nor closes it; closing the final descriptor for its open file description releases the lock.
 
+On Linux the entry chooses between the glibc and musl addons from the C library mapped into the running process, which it reads from the process's own memory maps. The build script applies the same rule to select the variant it compiles, so the two always agree. A diagnostic report is consulted only when those maps are unreadable, because building one walks every libuv handle and every CPU.
+
 The JSONL backend retains its inode check, materialization timing, and close lifecycle. Windows uses its existing koffi semaphore and never calls this POSIX binding. The browser worker supplies a single-process replacement for the flock entry, while running the Landlock JavaScript API unchanged.
 
 ## Builds and release

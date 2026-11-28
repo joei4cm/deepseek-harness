@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { fork, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { constants, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -10,11 +10,18 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { tryLockExclusive } from '../packages/entry/lib/flock.js';
+import { detectLinuxLibc } from '../packages/entry/lib/libc.js';
 import { loadFlockBinding } from './fixtures/flock-binding.js';
 
 const posix = process.platform === 'linux' || process.platform === 'darwin';
 const timeout = 120_000;
 const nativeOnly = { timeout, skip: posix ? false : 'The flock addon requires Linux or macOS' };
+// The report is the only libc signal on a Linux host without a readable /proc.
+const reportStubSkip = !posix
+  ? 'The flock addon requires Linux or macOS'
+  : process.platform === 'linux' && !existsSync('/proc/self/maps')
+    ? 'The diagnostic report is the only libc signal without a readable /proc'
+    : false;
 
 function resources(t) {
   const disposers = [];
@@ -139,7 +146,7 @@ async function childFixture(t, scope, fixture, args = [], { execArgv = [], inher
 
 async function oracleFixture(t, scope, mode) {
   const binary = process.platform === 'linux'
-    ? `./bin/${process.report.getReport().header.glibcVersionRuntime ? 'glibc' : 'musl'}/flock-oracle`
+    ? `./bin/${detectLinuxLibc()}/flock-oracle`
     : './bin/flock-oracle';
   const child = spawn(fileURLToPath(new URL(binary, import.meta.url)), [scope.file, mode], {
     env: childEnvironment(),
@@ -176,6 +183,12 @@ function cleanExit(result) {
 test('import succeeds with native addons disabled', { timeout }, async (t) => {
   const scope = resources(t);
   const child = await childFixture(t, scope, 'flock-import.js', [], { execArgv: ['--no-addons'] });
+  cleanExit(await child.waitForExit());
+});
+
+test('the entry loads its addon without building a diagnostic report', { timeout, skip: reportStubSkip }, async (t) => {
+  const scope = resources(t);
+  const child = await childFixture(t, scope, 'flock-report-stub.js', [scope.file]);
   cleanExit(await child.waitForExit());
 });
 

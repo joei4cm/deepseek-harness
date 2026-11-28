@@ -28,7 +28,7 @@ Importing either entry does not load an addon. A missing Landlock executable pro
 
 ## Support
 
-Linux x64/arm64 packages contain the static Landlock executable and separate glibc/musl `system.node` files. macOS x64/arm64 packages contain `system.node` only. Landlock additionally needs an enforcing Linux kernel; Windows uses the Harness's existing locking implementation. The [support matrix](docs/support-matrix.md) names builders and verification owners.
+Linux x64/arm64 packages contain the static Landlock executable and separate glibc/musl `system.node` files. The running process selects the file built for the C library it is linked against. macOS x64/arm64 packages contain `system.node` only. Landlock additionally needs an enforcing Linux kernel; Windows uses the Harness's existing locking implementation. The [support matrix](docs/support-matrix.md) names builders and verification owners.
 
 ## Development
 
