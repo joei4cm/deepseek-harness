@@ -24,6 +24,7 @@ import {
   type ContentBlock,
   type GenerateOptions,
   type MessageSource,
+  type ReasoningEffortId,
   type RequestMessage,
   type StreamChunk,
   type ToolCallId,
@@ -127,6 +128,8 @@ type ShownSchemas = Map<string, HistoricalToolSchema>
 interface ReviewSnapshot {
   readonly provider: string
   readonly model: string
+  /** Reasoning effort the reviewed Session's last request used, when one was recorded. */
+  readonly reasoningEffort?: ReasoningEffortId
   readonly cwd: string
   /** Retained items in Session order, ending with the pending call. */
   readonly history: readonly HistoricalEntry[]
@@ -568,6 +571,10 @@ function snapshotAutoReview(
   return deepFreeze({
     provider: header.config.provider,
     model: header.config.model,
+    // The reviewer reuses the reviewed Session's exact route: an effort the
+    // header recorded is one this route already accepted; an absent field
+    // keeps the adapter default.
+    ...header.config.reasoningEffort === undefined ? {} : { reasoningEffort: header.config.reasoningEffort },
     cwd,
     history,
     pending,
@@ -682,6 +689,7 @@ async function classifyRisk(
   const options: GenerateOptions = deepFreeze({
     provider: snapshot.provider,
     model: snapshot.model,
+    ...snapshot.reasoningEffort === undefined ? {} : { reasoningEffort: snapshot.reasoningEffort },
     system: REVIEW_POLICY,
     messages: reviewMessages(snapshot),
     temperature: 0,

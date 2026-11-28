@@ -18,6 +18,7 @@ import LlmRuntime, {
   type ToolCallId,
   type ContentBlock,
   type GenerateOptions,
+  type ReasoningEffortId,
   type StreamChunk,
   type ToolSchema,
 } from '@deepseek-ai/dsh-llm'
@@ -181,7 +182,7 @@ function autoSession(ctx: Context, id: string, cwd = '/workspace'): { session: S
 function appendHeader(
   session: Session,
   tools?: readonly ToolSchema[],
-  config: { provider: string; model: string } = { provider: 'review', model: 'same-model' },
+  config: { provider: string; model: string; reasoningEffort?: ReasoningEffortId } = { provider: 'review', model: 'same-model' },
 ): void {
   session.append('request/header', {
     header: { config, ...tools === undefined ? {} : { tools: [...tools] } },
@@ -510,6 +511,60 @@ describe('native review request', () => {
     expect(requestText).not.toContain('tool-source secret')
     expect(requestText).not.toContain('unstarted-call')
     expect(requestText).not.toContain('obsolete description')
+  })
+
+  it('reuses the effort the reviewed request header recorded and stays silent on the adapter default', async () => {
+    async function reviewedRequest(config: { provider: string; model: string; reasoningEffort?: ReasoningEffortId }) {
+      const { ctx, adapter } = await harness([
+        decisionChunks('{"risk":"low","decision":"allow"}'),
+      ])
+      const effort = config.reasoningEffort
+      if (effort !== undefined) {
+        // A thinking-only route: it advertises the efforts it accepts and
+        // defaults to a level the reviewed Session never chose.
+        vi.spyOn(adapter, 'resolveModel').mockImplementation((provider, model) => Promise.resolve({
+          provider, id: model, name: model,
+          reasoning: {
+            efforts: [
+              { id: brandString<ReasoningEffortId>('low'), name: 'low' },
+              { id: effort, name: 'max' },
+            ],
+            defaultEffort: brandString<ReasoningEffortId>('low'),
+          },
+        }))
+      }
+      const probe = registerProbe(ctx)
+      const { session, agent } = autoSession(ctx, `effort-${config.reasoningEffort ?? 'none'}`, '/workspace')
+      appendHeader(session, [{
+        name: 'probe',
+        description: 'live probe description',
+        parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+      }], config)
+      appendUser(session, 'task authority', { kind: 'user' })
+      const callId = brandString<ToolCallId>(`call-${config.reasoningEffort ?? 'none'}`)
+      appendAssistant(session, [{ type: 'tool-call', id: callId, name: 'probe', arguments: '{"path":"target"}' }])
+      appendNativeCall(session, callId, 'probe', '{"path":"target"}')
+      const result = await executeToolFixture(ctx, {
+        signal: new AbortController().signal,
+        callId,
+        name: 'probe',
+        arguments: { path: 'target' },
+        agent,
+      })
+      expect(result.isError).toBe(false)
+      expect(probe.runs()).toBe(1)
+      expect(adapter.requests).toHaveLength(1)
+      return adapter.requests[0]
+    }
+
+    // The header's effort is the one this exact route already accepted; a
+    // header without it leaves the field absent so the adapter default applies.
+    const withEffort = await reviewedRequest({
+      provider: 'review', model: 'same-model', reasoningEffort: brandString<ReasoningEffortId>('max'),
+    })
+    expect(withEffort?.reasoningEffort).toBe('max')
+    const withoutEffort = await reviewedRequest({ provider: 'review', model: 'same-model' })
+    expect(withoutEffort?.reasoningEffort).toBeUndefined()
   })
 
   it('scopes reused native call ids and started prefixes to one assistant step', async () => {

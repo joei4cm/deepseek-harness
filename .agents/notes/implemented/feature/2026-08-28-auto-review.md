@@ -30,7 +30,7 @@ The reviewer derives authority from existing Session facts. Text with `source.ki
 
 ### One complete reviewer request
 
-The integration uses only the latest `request/header.config` provider/model and the shipped adapter's default reasoning. It neither compares redundant route metadata nor copies the main agent's request. The request is a fixed system prompt followed by user messages:
+The integration uses only the latest `request/header.config` provider/model and the reasoning effort that header recorded; a header without an effort falls back to the shipped adapter's default reasoning. It neither compares redundant route metadata nor copies the main agent's request. The request is a fixed system prompt followed by user messages:
 
 | Part | Retained input |
 | --- | --- |
