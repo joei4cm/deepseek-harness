@@ -230,6 +230,12 @@ export class SubagentRuntime extends TypertRemoteService {
         /* v8 ignore else -- one injected binding owns the slot until its fiber disposes. */
         if (this.manager === manager) this.manager = undefined
       }, 'subagents.managerBinding()')
+      // Persistence withdrawal waits for this scope, so resident children stop
+      // and publish their closing events before the backend detaches its
+      // live-event router and closes their write handles.
+      childCtx.inject(['sessionPersistence'], (persistenceCtx: Context) => {
+        persistenceCtx.effect(() => () => manager.stopResidentChildren(), 'subagents.persistenceChildren()')
+      })
     })
   }
 

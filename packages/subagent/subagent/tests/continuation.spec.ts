@@ -1677,25 +1677,39 @@ describe('continuable durability and teardown', () => {
     await waitNoActivation(ctx, started.childId)
   })
 
-  it('settles despite the persistence backend being disposed mid-run', async () => {
+  it('stores the complete child log when the persistence backend is withdrawn mid-turn', async () => {
     const releaseResponse = Promise.withResolvers<undefined>()
     const adapter = new GatedAdapter([
-      { chunks: textResponse('unconfirmed answer'), gate: releaseResponse.promise },
+      { chunks: textResponse('late answer'), gate: releaseResponse.promise },
     ])
-    const { ctx, parent, disposePersistence } = await setupWith(adapter)
+    const { ctx, parent, disposePersistence, root } = await setupWith(adapter)
     const warnings: string[] = []
     ctx.logger.warn = (message: string) => { warnings.push(message) }
 
     const started = await ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'parent' })
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    // Tear down the whole backend under the child's open write path: its
-    // teardown closes the handle (draining what was buffered) and detaches
-    // the durability listeners, so the final flush finds no participant and
-    // never pins the Activation.
-    await disposePersistence!()
+    const child = ctx.agents.get(started.childId)!
+    // The backend's withdrawal stops the child while its live-event router is
+    // still mounted, so the events published by the unwinding turn are stored.
+    const withdrawn = disposePersistence!()
+    let withdrawalSettled = false
+    void withdrawn.finally(() => { withdrawalSettled = true })
+    await vi.waitFor(() => { expect(ctx.get('sessionPersistence')).toBeUndefined() })
+    expect(withdrawalSettled).toBe(false)
+    expect(ctx.agents.get(started.childId)).toBe(child)
     releaseResponse.resolve(undefined)
-
+    await withdrawn
     await waitNoActivation(ctx, started.childId)
+
+    const live = child.session.snapshotEvents()
+    expect(live.at(-1)?.type).toBe('turn/end')
+    const reader = await ctx.plugin(JsonlSessionPersistence, { root: root! })
+    try {
+      const stored = await loadStoredSession(ctx.get('sessionPersistence')!, started.childId)
+      expect(stored.events).toEqual(live)
+    } finally {
+      await reader.dispose()
+    }
     expect(warnings.join('\n')).not.toContain('final session flush')
   })
 

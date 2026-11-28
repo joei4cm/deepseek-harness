@@ -240,6 +240,16 @@ export class SubagentManager {
     this.draining = true
     for (const pending of this.materializations) pending.controller.abort()
     await Promise.all([...this.materializations].map(materialization => materialization.settled))
+    await this.stopResidentChildren()
+  }
+
+  /**
+   * Stop every resident child without closing manager admission. Session
+   * persistence withdrawal calls this so each child publishes its closing
+   * events before the backend detaches its live-event router.
+   * @returns settlement of every stopped child.
+   */
+  async stopResidentChildren(): Promise<void> {
     await this.disposeRoots([...this.resident.values()], 'activation(s)')
   }
 
