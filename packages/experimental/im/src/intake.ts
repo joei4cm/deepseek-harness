@@ -659,21 +659,29 @@ export function draftOf(bot: Bot, message: InboundMessage, source: ImSourceConfi
 
 /**
  * Parse a slash command after stripping leading self-mentions: `@bot /stop` → `{ name: 'stop', rawInput: '' }`.
- * Only the leading text run is inspected; everything after the command name — further text, mentions rendered as
- * `@name` — becomes `rawInput` with its leading whitespace kept, so a passthrough command sees exactly what was typed.
+ * Normalization wraps each bare inline run into a `<p>` block, so a one-line message arrives as `<p><text/></p>`:
+ * the command is the leading text run of the FIRST block, and everything after the command name — further text,
+ * mentions rendered as `@name`, and any following blocks — becomes `rawInput` with its leading whitespace kept,
+ * so a passthrough command sees exactly what was typed.
  * @param content - Message content.
  * @param selfId - The bot's platform user id (mentions of it are stripped).
  * @returns the parsed command, or undefined when the message does not start with a `/name` token.
  */
 export function parseCommand(content: InboundMessage['content'], selfId: string): ImCommand | undefined {
   const children = content.children
-  const index = children.findIndex(child => !isLeadingDecoration(child, selfId))
-  const head = children[index]
+  const first = children[0]
+  const leader = first?.type === 'p' ? first.children : children
+  const tail = first?.type === 'p' ? children.slice(1) : []
+  const index = leader.findIndex(child => !isLeadingDecoration(child, selfId))
+  const head = leader[index]
   if (head === undefined || head.type !== 'text') return undefined
   const text = head.attrs.content.replace(/^\s+/, '')
   const name = commandName(text)
   if (name === undefined) return undefined
-  return { name, rawInput: text.slice(name.length + 1) + toText(children.slice(index + 1)) }
+  const sameBlock = text.slice(name.length + 1) + toText(leader.slice(index + 1))
+  const rest = toText(tail)
+  const rawInput = rest.length === 0 ? sameBlock : `${sameBlock}\n${rest}`
+  return { name, rawInput }
 }
 
 /** Whether a leading child is stripped before looking for the command: a self-mention or blank text. */

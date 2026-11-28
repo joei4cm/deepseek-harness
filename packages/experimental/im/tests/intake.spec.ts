@@ -4,7 +4,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { h } from '@deepseek-ai/cordis-plugin-im-core'
+import { h, normalize } from '@deepseek-ai/cordis-plugin-im-core'
 import type { Bot, InboundMessage } from '@deepseek-ai/cordis-plugin-im-core'
 import { createTextMode, mountFakeAdapter, type FakeAdapter } from '@deepseek-ai/cordis-plugin-im-core/src/testing.ts'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -996,5 +996,20 @@ describe('admission and drafts', () => {
     // A command's arguments keep further mentions and text after the first run.
     expect(command(h('message', h.text('/ai'), at('user-9'), h.text('rest'))))
       .toEqual({ name: 'ai', rawInput: '@user-9rest' })
+    // normalize() wraps each bare inline run into a <p> block, so a plain message arrives as <p><text/></p>:
+    // the command is the leading text run of the first block, and later blocks join rawInput on a newline.
+    expect(command(normalize(h.text('/help')))).toEqual({ name: 'help', rawInput: '' })
+    expect(command(normalize(h.text('/compact  keep this')))).toEqual({ name: 'compact', rawInput: '  keep this' })
+    expect(command(normalize([at('bot-user'), h.text(' /stop')]))).toEqual({ name: 'stop', rawInput: '' })
+    expect(command(normalize([at('someone-else'), h.text(' /stop')]))).toBeUndefined()
+    expect(command(normalize([h('p', h.text('/status')), h('p', h.text('trailing'))])))
+      .toEqual({ name: 'status', rawInput: '\ntrailing' })
+    expect(command(normalize([h('p', h.text('/compact focus')), h('p', h.text('line 2'))])))
+      .toEqual({ name: 'compact', rawInput: ' focus\nline 2' })
+    expect(command(h('message', h('p', h.text('/status')), h('p'))))
+      .toEqual({ name: 'status', rawInput: '' })
+    // A leading block that is not a paragraph is not a command, and empty content parses to nothing.
+    expect(command(normalize(h('blockquote', h.text('/stop'))))).toBeUndefined()
+    expect(command(normalize([]))).toBeUndefined()
   })
 })

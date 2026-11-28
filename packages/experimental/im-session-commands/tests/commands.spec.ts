@@ -427,6 +427,35 @@ describe('passthrough', () => {
       .toContain('command/run')
   })
 
+  it('dispatches normalized paragraph-wrapped commands, including multi-paragraph passthrough input', async () => {
+    const harness = await bootCommands()
+    const record = await ensureShared(harness)
+    const seen: string[] = []
+    harness.ctx.commands.register({
+      name: 'compact',
+      description: 'Compact history',
+      handler: (invocation) => {
+        seen.push(invocation.rawInput)
+        return { kind: 'success', text: 'Compacted.' }
+      },
+    })
+
+    const help = inbound('', {
+      chat: { id: 'dm', type: 'direct' },
+      mentions: { self: false, all: false, users: [] },
+      content: normalize(h.text('/help')),
+    })
+    await harness.receive(help)
+    expect(harness.outcome(help.id)).toMatchObject({ kind: 'handled', by: BY })
+
+    const multi = inbound('', {
+      content: normalize([h('p', h.text('/compact')), h('p', h.text('keep this'))]),
+    })
+    await harness.receive(multi)
+    expect(seen).toEqual(['\nkeep this'])
+    expect(harness.outcome(multi.id)).toEqual({ kind: 'handled', by: BY, sessions: [record.sessionId] })
+  })
+
   it('relays the failure text of a failing command', async () => {
     const harness = await bootCommands()
     await ensureShared(harness)
