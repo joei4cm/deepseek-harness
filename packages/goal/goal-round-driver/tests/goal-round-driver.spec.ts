@@ -1281,6 +1281,79 @@ describe('same-session goal driving', () => {
     expect(test.agent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(true)
   })
 
+  it('withdraws a round queued behind maintenance and holds teardown until the agent settles', async () => {
+    const test = await harness(['hang'])
+    const maintenanceGate = Promise.withResolvers<undefined>()
+    // Maintenance claims the agent from the true idle phase and reports `idle`
+    // while it runs, so a reservation queued behind it is never a cancel target.
+    const maintenance = test.agent.runMaintenance(() => maintenanceGate.promise)
+    test.ctx.goals.create(test.agent, { objective: 'queued behind maintenance' })
+    await vi.waitFor(() => { expect(test.agent.inbox.nextTurn).toHaveLength(1) })
+
+    const disposal = Promise.resolve(test.driver.dispose())
+    // Teardown awaits the maintenance task; release it only after disposal began.
+    maintenanceGate.resolve(undefined)
+    await disposal
+    await maintenance
+
+    // Teardown already withdrew the reservation, so nothing may wake behind it.
+    expect(test.agent.inbox.nextTurn).toHaveLength(0)
+    await test.agent.whenIdle()
+    expect(test.adapter.requests).toHaveLength(0)
+    expect(test.agent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
+    expect(test.ctx.goals.get(test.agent)).toMatchObject({ phase: 'active', activation: 'disarmed', roundsStarted: 0 })
+  })
+
+  it('keeps the pre-step fence rejecting stale goal input while teardown waits', async () => {
+    const test = await harness(['hang'])
+    test.ctx.goals.create(test.agent, { objective: 'fence survives the teardown wait' })
+    await waitForRequests(test.adapter, 1)
+
+    // A foreign goal-sourced message queued after the abort latches a new wake;
+    // it reaches the step fence while teardown still awaits the agent. The
+    // followup leaves this listener's turn because a Session append cannot
+    // reenter the 'turn/end' publication it arrives through.
+    const stray = createUserMessage({
+      content: [{ type: 'text', text: 'stale goal input' }],
+      source: { kind: 'goal', goalId: brandString<GoalId>('stray-goal'), revision: 0, round: 9 },
+    })
+    let queued = false
+    test.ctx.on('session/event', (session, event) => {
+      if (session === test.agent.session && event.type === 'turn/end' && !queued) {
+        queued = true
+        queueMicrotask(() => { test.agent.followup(stray) })
+      }
+    })
+
+    await test.driver.dispose()
+
+    const ends = test.agent.session.snapshotEvents().flatMap(event =>
+      event.type === 'turn/end' ? [event.data.reason.kind] : [])
+    expect(ends).toEqual(['aborted', 'blocked'])
+    expect(test.adapter.requests).toHaveLength(1)
+    expect(test.ctx.goals.get(test.agent)).toMatchObject({ phase: 'active', activation: 'disarmed' })
+  })
+
+  it('finishes teardown when withdrawing a queued reservation fails', async () => {
+    const test = await harness(['hang'])
+    const maintenanceGate = Promise.withResolvers<undefined>()
+    const maintenance = test.agent.runMaintenance(() => maintenanceGate.promise)
+    test.ctx.goals.create(test.agent, { objective: 'queued behind maintenance' })
+    await vi.waitFor(() => { expect(test.agent.inbox.nextTurn).toHaveLength(1) })
+
+    // A pending splice whose durable write fails still must not hold the drain.
+    const remove = vi.spyOn(test.agent.inbox, 'remove').mockImplementation(() => {
+      throw new Error('inbox write lost')
+    })
+    const disposal = Promise.resolve(test.driver.dispose())
+    maintenanceGate.resolve(undefined)
+    await disposal
+    await maintenance
+
+    expect(remove).toHaveBeenCalled()
+    expect(test.ctx.goals.get(test.agent)).toMatchObject({ phase: 'active', activation: 'disarmed' })
+  })
+
   it('ignores session events without an exact owning agent and retires disposed agent state', async () => {
     const test = await harness([])
     const orphan = test.ctx.sessions.create(brandString<SessionId>('goal-session-orphan'))
