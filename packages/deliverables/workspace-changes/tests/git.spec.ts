@@ -130,6 +130,36 @@ describe('repository edge cases', () => {
     await expect(snapshotTree(runnerGit, workspace, signal)).rejects.toThrow()
   })
 
+  it.skipIf(process.platform === 'win32')('reuses one index between snapshots, so an unchanged file is not read again', async () => {
+    const cwd = await scratchDir('dsh-git-index-reuse-', cleanups)
+    git(cwd, 'init', '-q', '-b', 'main')
+    await writeFile(join(cwd, 'tracked.txt'), 'tracked\n')
+    git(cwd, 'add', '-A'); git(cwd, 'commit', '-q', '-m', 'init')
+    await writeFile(join(cwd, 'untracked.txt'), 'untracked\n')
+    const { git: runnerGit } = await runner()
+    const store = await scratchDir('dsh-git-store-', cleanups)
+    const workspace = (await locateGitWorkspace(runnerGit, cwd, objectsIn(store), signal))!
+    const first = await snapshotTree(runnerGit, workspace, signal)
+    expect(await treeBlob(runnerGit, workspace, first, 'untracked.txt', signal)).not.toBeNull()
+    // The index of the first snapshot stays in the Session's own directory.
+    expect((await readdir(join(store, 'objects'))).filter(name => name.startsWith('index-'))).toHaveLength(1)
+    // The file cannot be read again; the index of the first snapshot keeps its content.
+    await chmod(join(cwd, 'untracked.txt'), 0o000)
+    cleanups.push(() => chmod(join(cwd, 'untracked.txt'), 0o644))
+    const second = await snapshotTree(runnerGit, workspace, signal)
+    expect(await treeBlob(runnerGit, workspace, second, 'untracked.txt', signal)).not.toBeNull()
+    expect((await readdir(join(store, 'objects'))).filter(name => name.startsWith('index-'))).toHaveLength(1)
+  })
+
+  it('discards the index a failed snapshot left behind', async () => {
+    const cwd = await scratchDir('dsh-git-broken-index-', cleanups)
+    const { git: runnerGit } = await runner()
+    const store = await scratchDir('dsh-git-store-', cleanups)
+    const broken = { root: cwd, gitDir: join(cwd, 'missing'), scratch: store, env: {}, excludes: [] }
+    await expect(snapshotTree(runnerGit, broken, signal)).rejects.toThrow('git add in')
+    expect((await readdir(store)).filter(name => name.startsWith('index-'))).toEqual([])
+  })
+
   it('reports a repository git cannot read instead of treating it as absent', async () => {
     const cwd = await scratchDir('dsh-git-unsupported-', cleanups)
     git(cwd, 'init', '-q')
@@ -238,7 +268,8 @@ describe('TurnRecorder', () => {
     await recorder.settled()
     await writeFile(join(cwd, 'tracked.txt'), 'one\ntwo\n')
     recorder.observe(toolCall(session, 1, 'bash', { command: 'x' }))
-    await recorder.stopping(1)
+    recorder.attemptRecord(1)
+    await recorder.settled()
     const announced = session.snapshotEvents().find(event => event.type === 'workspace/changes')
     expect(recorder.summary(announced!.seq)?.files.map(file => file.display)).toEqual(['tracked.txt'])
     await recorder.dispose()

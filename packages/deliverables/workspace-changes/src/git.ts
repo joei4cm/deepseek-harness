@@ -1,5 +1,7 @@
 /** Git working-tree snapshots, tree diffs, and ignore checks through the subprocess capability. */
-import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { constants } from 'node:fs'
+import { copyFile, mkdir, rm } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { parseNumstat, type NumstatEntry } from './numstat.ts'
@@ -97,7 +99,7 @@ export interface GitWorkspace {
   root: string
   /** Absolute git directory holding the repository's index. */
   gitDir: string
-  /** Private directory holding the snapshot object store and each snapshot's scratch index. */
+  /** Private directory holding the snapshot object store and the snapshot index. */
   scratch: string
   /** Environment that routes object writes to the private store and object reads through the repository's store. */
   env: Readonly<Record<string, string>>
@@ -110,6 +112,11 @@ function isMissing(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ENOENT'
 }
 
+/** Whether a filesystem error names a path that already exists. */
+function isExisting(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'EEXIST'
+}
+
 /**
  * Locate the repository enclosing a working directory and prepare the private
  * directory its snapshots write to. The repository's own object store is
@@ -120,7 +127,7 @@ function isMissing(error: unknown): boolean {
  * failure throws.
  * @param git - command runner.
  * @param cwd - absolute Session working directory.
- * @param scratch - yields the private directory for snapshot objects and scratch indexes; called only for a located repository.
+ * @param scratch - yields the private directory for snapshot objects and the snapshot index; called only for a located repository.
  * @param signal - cancellation.
  * @returns the repository, or null when the directory is not inside one.
  */
@@ -141,33 +148,70 @@ export async function locateGitWorkspace(
 }
 
 /**
+ * The index file one repository's snapshots share. Keeping it between
+ * snapshots preserves the stat cache of every file, so an unchanged file is
+ * not read and hashed again.
+ * @param workspace - addressed repository.
+ * @returns the path of the snapshot index.
+ */
+function snapshotIndex(workspace: GitWorkspace): string {
+  const digest = createHash('sha256').update(workspace.root).digest('hex').slice(0, 16)
+  return join(workspace.scratch, `index-${digest}`)
+}
+
+/**
+ * Seed the snapshot index from the repository's index the first time it is
+ * used. A later snapshot keeps the index the previous snapshot left.
+ * @param index - the snapshot index path.
+ * @param gitDir - absolute git directory holding the repository's index.
+ * @throws when the repository's index exists but cannot be copied.
+ */
+async function seedSnapshotIndex(index: string, gitDir: string): Promise<void> {
+  try {
+    await copyFile(join(gitDir, 'index'), index, constants.COPYFILE_EXCL)
+  } catch (error: unknown) {
+    // The snapshot index exists already, or the repository has none yet; both keep the index in use.
+    if (!isMissing(error) && !isExisting(error)) throw error
+  }
+}
+
+/**
+ * Remove a snapshot index git can no longer use, with the lock file a killed
+ * command leaves behind. The next snapshot seeds a fresh index.
+ * @param index - the snapshot index path.
+ */
+async function discardSnapshotIndex(index: string): Promise<void> {
+  await rm(index, { force: true })
+  await rm(`${index}.lock`, { force: true })
+}
+
+/**
  * Write the complete work tree, including untracked and modified files but
  * not ignored ones, as a tree object through a private index seeded from the
  * repository's index. New blobs and the tree land in the private object store;
  * the repository's index, object store, work tree, and refs stay unchanged,
- * and an in-progress merge keeps its unmerged entries.
+ * and an in-progress merge keeps its unmerged entries. Successive snapshots
+ * share one index, so a file that did not change is not read again.
  * @param git - command runner.
  * @param workspace - addressed repository.
  * @param signal - cancellation.
  * @returns the tree object id.
  */
 export async function snapshotTree(git: GitRunner, workspace: GitWorkspace, signal: AbortSignal): Promise<string> {
-  const scratch = await mkdtemp(join(workspace.scratch, 'index-'))
+  const index = snapshotIndex(workspace)
+  await seedSnapshotIndex(index, workspace.gitDir)
+  const env = { ...workspace.env, GIT_INDEX_FILE: index }
+  // `--ignore-errors` skips unreadable files and reports them through exit code 1; the index is still complete.
+  const pathspec = workspace.excludes.length === 0 ? [] : ['--', '.', ...workspace.excludes.map(path => `:(exclude)${path}`)]
   try {
-    const index = join(scratch, 'index')
-    // A repository without an index yet (fresh `git init`) starts from scratch.
-    await copyFile(join(workspace.gitDir, 'index'), index).catch((error: unknown) => {
-      if (!isMissing(error)) throw error
-    })
-    const env = { ...workspace.env, GIT_INDEX_FILE: index }
-    // `--ignore-errors` skips unreadable files and reports them through exit code 1; the index is still complete.
-    const pathspec = workspace.excludes.length === 0 ? [] : ['--', '.', ...workspace.excludes.map(path => `:(exclude)${path}`)]
     const added = await git.run(['add', '--all', '--ignore-errors', ...pathspec], { cwd: workspace.root, env, signal })
     /* v8 ignore next -- git reports a skipped unreadable file only on hosts whose permissions the tests can revoke. */
     if (added.exitCode !== 1) ok(added, `git add in ${workspace.root}`)
     return ok(await git.run(['write-tree'], { cwd: workspace.root, env, signal }), 'git write-tree').stdout.trim()
-  } finally {
-    await rm(scratch, { recursive: true, force: true })
+  } catch (error: unknown) {
+    // A failed add leaves an index git cannot reuse; the next snapshot seeds a new one.
+    await discardSnapshotIndex(index)
+    throw error
   }
 }
 

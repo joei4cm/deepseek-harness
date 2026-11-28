@@ -153,11 +153,12 @@ export function apply(ctx: Context, config: Config): void {
     }
     if (event.type === 'workspace-root/change') recorders.get(session)?.moveTo(event.data.cwd)
     else if (event.type === 'tool/result') recorders.get(session)?.observe(event)
-    else if (event.type === 'turn/end') recorders.get(session)?.end(event.data.turn)
+    else if (event.type === 'turn/end') recorders.get(session)?.attemptRecord(event.data.turn)
   })
   ctx.on('session/disposed', (session) => { void forget(session) })
-  ctx.on('agent/turn-stopping', async ({ agent, turn }) => {
-    await recorders.get(agent.session)?.stopping(turn)
+  ctx.on('agent/turn-stopping', ({ agent, turn }) => {
+    // The turn does not wait for the snapshot; the summary is announced when it is ready.
+    recorders.get(agent.session)?.attemptRecord(turn)
   })
   const capture = async (target: FsTarget, actor: object | undefined): Promise<void> => {
     const recorder = actor === undefined ? undefined : mutations.get(actor)

@@ -81,7 +81,7 @@ interface TurnState {
   /** Content of each file-tool-mutated path before the turn's first mutation of it, by canonical absolute path. */
   readonly captures: Map<string, Capture>
   lastToolResultSeq: number
-  /** Log length when the latest record attempt started; `end()` skips a turn already attempted after its last tool result. */
+  /** Log length of the last tool result a record attempt covered; later results are recorded again. */
   attemptedAfterSeq: number
   /** Sequence of the latest appended event, or -1. */
   recordedAfterSeq: number
@@ -121,7 +121,7 @@ export class TurnRecorder {
   private host: Pick<Paths, 'home' | 'temporaryRoots'> | undefined
   /** Located repositories by canonical Session directory, reused across turns; an absent entry keeps retrying each turn. */
   private readonly repositories = new Map<string, Repository>()
-  /** Temporary directory holding this Session's snapshot objects, scratch indexes, and captured copies. */
+  /** Temporary directory holding this Session's snapshot objects, snapshot index, and captured copies. */
   private scratch: Promise<string> | undefined
   /** Records by the sequence of the event that announced them. */
   private readonly records = new Map<number, TurnRecord>()
@@ -194,23 +194,15 @@ export class TurnRecorder {
   }
 
   /**
-   * Record the turn's changes inside the turn, before `turn/end` commits.
-   * @param turn - the stopping turn.
-   * @returns after the event is appended or the attempt failed.
+   * Start the turn's record. The turn does not wait for it: the snapshot runs
+   * in this recorder's queue and the summary is announced when it is ready.
+   * A turn is recorded once for the tool results it has settled, and again
+   * when later results settle after that attempt.
+   * @param turn - the turn number the record belongs to.
    */
-  stopping(turn: number): Promise<void> {
+  attemptRecord(turn: number): void {
     const state = this.state
-    if (turn !== state.turn) return Promise.resolve()
-    return this.enqueue(signal => this.record(state, signal))
-  }
-
-  /**
-   * Record after `turn/end` unless a record was already attempted after the turn's last tool result.
-   * @param turn - the turn number from `turn/end`.
-   */
-  end(turn: number): void {
-    const state = this.state
-    if (turn !== state.turn || state.attemptedAfterSeq >= state.lastToolResultSeq) return
+    if (turn !== state.turn || !this.claim(state)) return
     void this.enqueue(signal => this.record(state, signal))
   }
 
@@ -319,11 +311,24 @@ export class TurnRecorder {
     }
   }
 
+  /**
+   * Claim the turn's one record attempt. A turn is recorded once for the tool
+   * results it has settled, and again when later results settle after that
+   * attempt.
+   * @param state - the turn's state.
+   * @returns whether this caller owns the attempt.
+   */
+  private claim(state: TurnState): boolean {
+    if (state.lastToolResultSeq < 0) return false
+    if (state.attemptedAfterSeq >= state.lastToolResultSeq) return false
+    state.attemptedAfterSeq = state.lastToolResultSeq
+    return true
+  }
+
   private async record(state: TurnState, signal: AbortSignal): Promise<void> {
     const { paths } = state
     const { baseline } = state
-    if (paths === undefined || baseline === 'failed' || state.lastToolResultSeq < 0) return
-    state.attemptedAfterSeq = state.lastToolResultSeq
+    if (paths === undefined || baseline === 'failed') return
     // Without a snapshot the working directory itself bounds the workspace.
     const root = baseline?.workspace.root ?? paths.cwd
     const listed = new Map<string, Listed>()

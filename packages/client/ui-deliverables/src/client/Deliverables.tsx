@@ -10,6 +10,7 @@ import type { ChangesDiffStore } from './changes-diff.ts'
 import type { ChangesSummaryStore } from './changes-summary.ts'
 import { ChangedFiles } from './ChangedFiles.tsx'
 import { changesForClosing, presentedForClosing, type ChangesTurnData, type PresentedPath } from './turn-deliverables.ts'
+import { useTurnDataValue } from './use-turn-data.ts'
 import type { NS } from './locales.ts'
 import { changesSummaryUrl, type ChangesReviewCoordinates } from '../changes.ts'
 import { presentedFileUrl } from '../presented.ts'
@@ -55,7 +56,10 @@ export function selectDeliverables(owner: TurnTailOwnerProps): DeliverablesMatch
  * @returns file rows, or null when the Turn declares none.
  */
 export function DeliverablesTail(props: PropsRuntime<'conversation.chat.turnTail'> & PropsLocale<typeof NS> & InjectFace<DeliverablesInjected> & PropsRenderSlots<'deliverables.file.actions'>) {
-  const matched = selectDeliverables(props)
+  // The record can settle after the Turn closed, when its tail Node is already
+  // built; the keyed subscription re-renders the seat when the store publishes.
+  const recordData = useTurnDataValue(props.turn.data, 'deliverables')
+  const matched = recordData === undefined ? null : selectDeliverables(props)
   return matched === null ? null : <Deliverables {...props} matched={matched} />
 }
 

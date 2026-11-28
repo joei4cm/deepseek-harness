@@ -60,7 +60,11 @@ it.each(['write', 'edit', 'str_replace_editor'] as const)('captures the resolved
   const result = events.find(event => event.type === 'tool/result')
   expect(result).toMatchObject({ data: { message: { isError: false } } })
   if (name !== 'str_replace_editor') expect(result).toMatchObject({ data: { meta: { path: join(current, 'witness.txt') } } })
-  const announcement = events.findLast(event => event.type === 'workspace/changes')
+  // The summary follows the turn it describes; the agent does not wait for it.
+  await vi.waitFor(() => {
+    expect(agent.session.snapshotEvents().findLast(event => event.type === 'workspace/changes')).toBeDefined()
+  })
+  const announcement = agent.session.snapshotEvents().findLast(event => event.type === 'workspace/changes')
   expect(announcement).toBeDefined()
   const summary = ctx.workspaceChanges.summary(agent.id, announcement!.seq)
   // The turn started in `current`; its summary keeps that directory after the move back.

@@ -10,7 +10,7 @@ import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { renderFileActions } from './file-actions.tsx'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context } from '@deepseek-ai/cordis'
-import { cleanup, fireEvent, render, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionLiveEventEntry, SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
@@ -111,6 +111,7 @@ afterEach(() => {
 class TestTurnDataStore implements ConversationLocationDataStore<ConversationTurnDataMap> {
   private readonly values = new Map<string, unknown>()
   private readonly sources = new Map<string, ConversationLocationDataSource<unknown>>()
+  private readonly listeners = new Map<string, Set<() => void>>()
 
   get<Key extends Extract<keyof ConversationTurnDataMap, string>>(
     key: Key,
@@ -123,7 +124,15 @@ class TestTurnDataStore implements ConversationLocationDataStore<ConversationTur
   ): ConversationLocationDataSource<Readonly<ConversationTurnDataMap[Key]> | undefined> {
     let source = this.sources.get(key)
     if (source === undefined) {
-      source = { getSnapshot: () => this.get(key), subscribe: () => () => {} }
+      source = {
+        getSnapshot: () => this.get(key),
+        subscribe: (listener: () => void) => {
+          const listeners = this.listeners.get(key) ?? new Set()
+          this.listeners.set(key, listeners)
+          listeners.add(listener)
+          return () => { listeners.delete(listener) }
+        },
+      }
       this.sources.set(key, source)
     }
     return source as ConversationLocationDataSource<Readonly<ConversationTurnDataMap[Key]> | undefined>
@@ -134,6 +143,7 @@ class TestTurnDataStore implements ConversationLocationDataStore<ConversationTur
     value: ConversationTurnDataMap[Key],
   ): void {
     this.values.set(key, value)
+    for (const listener of this.listeners.get(key) ?? []) listener()
   }
 }
 
@@ -1192,4 +1202,24 @@ it('contributes file artifacts to the tail list only for turns with deliveries',
   const withFile = tailOwner({ produced: [], presented: [{ path: 'report.md', seq: 2, index: 0 }] }, 3)
   view.rerender(<DeliverablesTail {...props} {...withFile} />)
   expect(view.getByText('report.md')).toBeTruthy()
+})
+
+it('renders a record that settles after the Turn closed without new owner props', () => {
+  const summaries = new ChangesSummaryStore()
+  summaries.state.set({ [changesSummaryUrl(brandString<SessionId>('session'), 5)]: { turn: 1, cwd: '/workspace', files: [{ path: 'a.txt', display: 'a.txt', added: 1, deleted: 0 }], total: 1, added: 1, deleted: 0 } })
+  const data = new TestTurnDataStore()
+  const props: Parameters<typeof DeliverablesTail>[0] = {
+    ...standardProps,
+    ...openProps(new PresentedOpenController(), summaries),
+    turn: { turn: 1, start: undefined, end: undefined, status: 'closed', steps: [], data },
+    seq: 6,
+    openFile: () => {},
+    sessionId: brandString<SessionId>('session'),
+    t: makeTranslate(en),
+  }
+  const view = render(<DeliverablesTail {...props} />)
+  expect(view.container.innerHTML).toBe('')
+  // The tail Node exists before the record settles; the store publishes it afterwards.
+  act(() => { data.set('deliverables', { produced: [], changes: { seq: 5 } }) })
+  expect(view.getByText('Edited a.txt')).toBeTruthy()
 })

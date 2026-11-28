@@ -204,30 +204,35 @@ describe('workspace-changes in a repository', () => {
     expect(await ctx.workspaceChanges.diff(session.id, announcedSeq(session), 2, signal)).toMatchObject({ kind: 'text', before: false, after: true, hunks: [{ lines: ['+one', '+two', '+three'] }] })
   })
 
-  it('records inside the turn when the agent stops, and again after turn/end only when tools settled later', async () => {
+  it('records when the agent stops without holding the turn, and again after turn/end only when tools settled later', async () => {
     const cwd = await repository()
     const { ctx } = await boot()
     const session = ctx.sessions.create(brandString<SessionId>('stopping'), { meta: { cwd } })
     const agent = { session } as never
     startTurn(session, 1)
+    await settle(ctx, session)
     await ctx.serial('agent/turn-stopping', { agent, turn: 1, signal })
     expect(changes(ctx, session)).toEqual([])
     await writeFile(join(cwd, 'one.txt'), '1\n')
     toolCall(session, 1, 'bash', { command: 'x' })
     await ctx.serial('agent/turn-stopping', { agent, turn: 7, signal })
     await ctx.serial('agent/turn-stopping', { agent, turn: 1, signal })
-    const inTurn = session.snapshotEvents().find(event => event.type === 'workspace/changes')
-    expect(ctx.workspaceChanges.summary(session.id, inTurn!.seq)).toMatchObject({ turn: 1, total: 1 })
+    // The turn does not wait for the snapshot; the summary follows it.
+    expect(changes(ctx, session)).toEqual([])
     endTurn(session, 1)
     await settle(ctx, session)
+    const inTurn = session.snapshotEvents().find(event => event.type === 'workspace/changes')
+    expect(ctx.workspaceChanges.summary(session.id, inTurn!.seq)).toMatchObject({ turn: 1, total: 1 })
     expect(changes(ctx, session)).toHaveLength(1)
-    expect(session.snapshotEvents().find(event => event.type === 'turn/end')!.seq).toBeGreaterThan(inTurn!.seq)
+    // The summary follows the turn it describes.
+    expect(inTurn!.seq).toBeGreaterThan(session.snapshotEvents().find(event => event.type === 'turn/end')!.seq)
 
     startTurn(session, 2)
     await settle(ctx, session)
     await writeFile(join(cwd, 'two.txt'), '2\n')
     toolCall(session, 2, 'bash', { command: 'x' })
     await ctx.serial('agent/turn-stopping', { agent, turn: 2, signal })
+    await settle(ctx, session)
     await rm(join(cwd, 'two.txt'))
     toolCall(session, 2, 'bash', { command: 'steered' })
     endTurn(session, 2)

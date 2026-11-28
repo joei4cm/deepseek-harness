@@ -184,8 +184,12 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     cwd = session.header.cwd
     if (MODE === 'record') await recordFixture(scaffold, sessionId, FIXTURE)
 
+    // The record does not hold the turn: the summary is announced after turn/end.
+    await expect.poll(
+      () => session.snapshotEvents().some(event => event.type === 'workspace/changes'),
+      { timeout: 15_000 },
+    ).toBe(true)
     const announced = session.snapshotEvents().filter(event => event.type === 'workspace/changes').at(-1)
-    expect(announced, 'the turn must announce its changed files').toBeDefined()
     if (announced === undefined) throw new Error('no changed-files announcement')
     expect(announced.data).toEqual({ turn: 1 })
     // The log carries only the turn; the Host serves the summary for the announcing event while the Session lives.
