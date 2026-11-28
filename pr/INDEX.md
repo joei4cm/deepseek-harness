@@ -74,3 +74,4 @@ The `discussions/` directory holds reply drafts for upstream Discussions, ready 
 | `64-goal-round-driver-teardown-fence.md` | `fix/goal-round-driver-teardown-fence` | upstream `master`, dsh-v0.2.3-alpha.2 | — |
 | `65-schedule-archive-admission-teardown.md` | `fix/schedule-archive-admission-teardown` | upstream `master`, dsh-v0.2.3-alpha.2 | — |
 | `66-subagent-persistence-withdrawal-children.md` | `fix/subagent-persistence-withdrawal-children` | upstream `master`, dsh-v0.2.3-alpha.2 | — |
+| `67-agent-loop-persistence-withdrawal-agents.md` | `fix/agent-loop-persistence-withdrawal-agents` | upstream `master`, dsh-v0.2.3-alpha.2 | — |
