@@ -92,6 +92,21 @@ class FactoryOwnership {
     await Promise.race([job, this.inactive.promise])
   }
 
+  /**
+   * Stop every live agent without closing factory admission. Session
+   * persistence withdrawal calls this so each unwinding turn commits its
+   * closing events before the backend detaches its live-event router.
+   * @returns settlement of every stopped agent.
+   */
+  async stopLiveAgents(): Promise<void> {
+    const settlements = await Promise.allSettled([...this.liveAgents].map(dispose => dispose()))
+    const failures: unknown[] = []
+    for (const result of settlements) {
+      if (result.status === 'rejected') failures.push(result.reason)
+    }
+    throwCollectedFailures(failures, 'agent loop disposal failed')
+  }
+
   async dispose(): Promise<void> {
     this.accepting = false
     this.teardown.abort(new Error('agent loop is not active'))
@@ -330,6 +345,15 @@ export class AgentLoop extends Service implements AgentFactory {
     const ownership = this.ownership
     // Agent projections remain readable until teardown finishes.
     ctx.effect(() => () => ownership.dispose(), 'agentLoop.transactions()')
+    // Persistence withdrawal waits for this scope, so live agents stop and
+    // publish their closing events before the backend detaches its
+    // live-event router and closes their write handles.
+    ctx.effect(() => {
+      const fiber = ctx.inject(['sessionPersistence'], (persistenceCtx: Context) => {
+        persistenceCtx.effect(() => () => ownership.stopLiveAgents(), 'agentLoop.stopLiveAgents()')
+      })
+      return fiber.dispose
+    }, 'agentLoop.persistenceAgents()')
     this.modelProjectionHandle = await ctx.sessionProjections.register(modelSelectionProjectionDefinition)
     this.inboxProjectionHandle = await ctx.sessionProjections.register(inboxProjectionDefinition)
     ctx.effect(() => ctx.agents.setFactory(this), 'agentLoop.setFactory()')

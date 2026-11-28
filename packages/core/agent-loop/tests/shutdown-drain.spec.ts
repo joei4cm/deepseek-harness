@@ -1,7 +1,7 @@
 /** Root-fiber shutdown drains buffered session events durably (both mount orders). */
 
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
-import { describe, expect, it, afterEach } from 'vitest'
+import { describe, expect, it, afterEach, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -29,7 +29,12 @@ function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
   })
 }
 
-async function mount(order: 'backend-first' | 'loop-first'): Promise<{ ctx: Context; root: string }> {
+async function mount(order: 'backend-first' | 'loop-first', adapter = new MockAdapter([textResponse('done')])): Promise<{
+  ctx: Context
+  root: string
+  adapter: MockAdapter
+  disposePersistence: () => Promise<void>
+}> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-shutdown-drain-'))
   dirs.push(root)
   const ctx = new Context()
@@ -40,15 +45,16 @@ async function mount(order: 'backend-first' | 'loop-first'): Promise<{ ctx: Cont
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(AgentRegistry)
+  let persistenceFiber: { dispose: () => Promise<void> } | undefined
   if (order === 'backend-first') {
-    await ctx.plugin(JsonlSessionPersistence, { root })
+    persistenceFiber = await ctx.plugin(JsonlSessionPersistence, { root })
     await ctx.plugin(AgentLoop, { agents: [] })
   } else {
     await ctx.plugin(AgentLoop, { agents: [] })
-    await ctx.plugin(JsonlSessionPersistence, { root })
+    persistenceFiber = await ctx.plugin(JsonlSessionPersistence, { root })
   }
-  ctx.llm.registerAdapter(['mock'], new MockAdapter([textResponse('done')]))
-  return { ctx, root }
+  ctx.llm.registerAdapter(['mock'], adapter)
+  return { ctx, root, adapter, disposePersistence: () => persistenceFiber.dispose() }
 }
 
 describe.each(['backend-first', 'loop-first'] as const)('root shutdown drain (%s)', (order) => {
@@ -68,5 +74,42 @@ describe.each(['backend-first', 'loop-first'] as const)('root shutdown drain (%s
     await reader.close()
     expect(events.at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'completed' } } })
     await verify.fiber.dispose()
+  })
+
+  it('persists the live closing events of an agent stopped by backend withdrawal', async () => {
+    const { ctx, root, adapter, disposePersistence } = await mount(order, new MockAdapter(['hang']))
+    const sessionId = brandString<SessionId>('withdrawal-drain')
+    const handle = await ctx.agents.create({ sessionId, agentOptions: { provider: 'mock', model: 'mock' } })
+    handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'q' }], source: { kind: 'user' } }))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    // Withdraw the backend while the turn hangs: the agent must stop and
+    // publish its closing events before the router detaches.
+    await disposePersistence()
+
+    const live = handle.agent.session.snapshotEvents()
+    expect(live.at(-1)?.type).toBe('turn/end')
+    const verify = new Context()
+    await verify.plugin(JsonlSessionPersistence, { root })
+    const reader = await verify.sessionPersistence.open(sessionId, 'read')
+    const { events } = await reader.read()
+    await reader.close()
+    expect(events).toEqual(live)
+    await verify.fiber.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('completes backend withdrawal and reports an agent teardown failure', async () => {
+    const { ctx, disposePersistence } = await mount(order)
+    const errors: string[] = []
+    ctx.logger.error = ((error: unknown) => { errors.push(String(error)) }) as typeof ctx.logger.error
+    const sessionId = brandString<SessionId>('withdrawal-failure')
+    const handle = await ctx.agents.create({ sessionId, agentOptions: { provider: 'mock', model: 'mock' } })
+    const machine = handle.agent as Agent & { scope: { dispose: () => Promise<void> } }
+    vi.spyOn(machine.scope, 'dispose').mockRejectedValue(new Error('scope exploded'))
+
+    await disposePersistence()
+    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(errors.some(error => error.includes('scope exploded'))).toBe(true)
+    await ctx.fiber.dispose()
   })
 })
