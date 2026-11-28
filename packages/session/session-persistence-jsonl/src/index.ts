@@ -13,7 +13,7 @@ import {
   SessionFormatUnsupportedMigrationError,
   sessionFormatCatalog,
 } from '@deepseek-ai/dsh-session-format-catalog'
-import { readdirSync, type Dirent } from 'node:fs'
+import { readdirSync, type BigIntStats, type Dirent } from 'node:fs'
 import { open, mkdir, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -39,8 +39,8 @@ import { SESSION_FORMAT_VERSION, SessionLogOffset } from '@deepseek-ai/dsh-sessi
 import type { SessionEvent, SessionId, SessionHeader, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
 import {
   assertNoRetiredHeaderFields, encodeSegment, eventLines, generationLogFilename, generationLogPath, logPath, logSuffix,
-  parseGenerationLogFilename, projectDir, scanLog, sessionDir, SessionLogScanner, toHeaderLine,
-  type JsonlCompression,
+  openLogScan, parseGenerationLogFilename, projectDir, sessionDir, SessionLogScanner, toHeaderLine,
+  type JsonlCompression, type SessionLogScan,
 } from './format.ts'
 import {
   compressZstdFrame, createZstdFrameDecoder, decompressZstdFrame, decompressZstdPrefix, scanZstdFrames,
@@ -79,6 +79,23 @@ export type { JsonlCompression } from './format.ts'
  */
 const COLD_LOG_MEMO_MAX_ENTRIES = 2
 
+/**
+ * Internal reuse policy, not deployment configuration: the Sessions whose
+ * decode state stays open so a repeated read decodes only appended bytes,
+ * such as the live Sessions one Host observes at once.
+ */
+const LOG_TAIL_MAX_ENTRIES = 8
+
+/**
+ * Internal reuse policy, not deployment configuration: the decoded events all
+ * retained decode states may hold together, so a few very long Sessions do
+ * not keep their histories in memory after readers move on.
+ */
+const LOG_TAIL_MAX_EVENTS = 250_000
+
+/** Consumed bytes a continued read compares before it trusts the retained decode state. */
+const LOG_TAIL_ANCHOR_BYTES = 64
+
 const DEFAULT_COMPRESSION: JsonlCompression = 'zstd'
 /**
  * Internal scheduling constant, not deployment configuration: balance
@@ -86,6 +103,45 @@ const DEFAULT_COMPRESSION: JsonlCompression = 'zstd'
  * remains an indivisible synchronous decode.
  */
 const ZSTD_DECODE_YIELD_INTERVAL_MS = 500
+
+/**
+ * Feed decoded frames to a scanner, yielding to the event loop between frames
+ * once a decode slice exceeds its interval.
+ * @param scanner - the open scanner the frames continue.
+ * @param plaintexts - decoded frames in file order.
+ * @param frameCount - number of frames `plaintexts` yields.
+ * @param signal - optional cancellation checked before each frame.
+ */
+async function scanFrames(
+  scanner: SessionLogScanner,
+  plaintexts: Iterable<Buffer>,
+  frameCount: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  let yieldDeadline = performance.now() + ZSTD_DECODE_YIELD_INTERVAL_MS
+  let remainingFrames = frameCount
+  for (const plaintext of plaintexts) {
+    signal?.throwIfAborted()
+    scanner.write(plaintext)
+    remainingFrames -= 1
+    if (remainingFrames > 0 && performance.now() >= yieldDeadline) {
+      await scheduler.yield()
+      signal?.throwIfAborted()
+      yieldDeadline = performance.now() + ZSTD_DECODE_YIELD_INTERVAL_MS
+    }
+  }
+}
+
+/** One decoded current physical snapshot before validation. */
+interface ParsedStoredLog {
+  meta: SessionHeader
+  inheritedEventCount: SessionLogOffsetType
+  events: SessionEvent[]
+  tornTruncateTo: number | undefined
+  recoveredTail: SessionEvent[]
+  /** The open scanner when the snapshot ended on a complete frame or record. */
+  scanner: SessionLogScanner | undefined
+}
 
 /** Assert that the independently decodable first frame contains only the header record. */
 function assertZstdHeaderFrame(plaintext: Buffer): void {
@@ -185,11 +241,63 @@ function freezeStoredEvent(event: SessionEvent): void {
   }
 }
 
-/** Establish immutable sharing for one decoded event graph and report that state. */
-function freezeStoredEvents(events: SessionEvent[]): FrozenStoredEvents {
-  for (const event of events) freezeStoredEvent(event)
+/**
+ * Establish immutable sharing for one decoded event graph and report that state.
+ * @param events - the decoded events, frozen in place.
+ * @param from - index of the first event not yet frozen.
+ * @returns the events in their shared-frozen state.
+ */
+function freezeStoredEvents(events: SessionEvent[], from = 0): FrozenStoredEvents {
+  for (let index = from; index < events.length; index += 1) freezeStoredEvent(events[index] as SessionEvent)
   Object.freeze(events)
   return { eventState: 'shared-frozen', events }
+}
+
+/**
+ * Decode state of a complete current log read, retained so the next read of
+ * the same file decodes only the bytes appended after it.
+ */
+interface StoredLogTail {
+  readonly path: string
+  readonly dev: bigint
+  readonly ino: bigint
+  /** Bytes consumed: the end of the last complete frame or record. */
+  readonly size: number
+  /** The consumed bytes just before `size`, which a continued read must find unchanged. */
+  readonly anchor: Buffer
+  /** Scanner positioned at `size`; one read at a time claims and continues it. */
+  readonly scanner: SessionLogScanner
+  readonly stored: CurrentStoredLog
+}
+
+/** Insert one entry into a bounded least-recently-used map. */
+function setBounded<K, V>(map: Map<K, V>, key: K, value: V, maxEntries: number): void {
+  map.delete(key)
+  map.set(key, value)
+  for (const oldest of map.keys()) {
+    if (map.size <= maxEntries) break
+    map.delete(oldest)
+  }
+}
+
+/**
+ * Read the bytes of `path` from the retained anchor to `size`.
+ * @returns the anchor and appended bytes, or `undefined` when the file is no
+ * longer the one `tail` was decoded from.
+ */
+async function readFromAnchor(path: string, tail: StoredLogTail, size: number): Promise<Buffer | undefined> {
+  const start = tail.size - tail.anchor.length
+  const bytes = Buffer.allocUnsafe(size - start)
+  const handle = await open(path, 'r')
+  try {
+    const { bytesRead } = await handle.read(bytes, 0, bytes.length, start)
+    const after = await handle.stat({ bigint: true })
+    if (bytesRead !== bytes.length || after.dev !== tail.dev || after.ino !== tail.ino
+      || !bytes.subarray(0, tail.anchor.length).equals(tail.anchor)) return undefined
+    return bytes
+  } finally {
+    await handle.close()
+  }
 }
 
 /** One authoritative immutable generation selected from a Session directory. */
@@ -341,6 +449,12 @@ export class JsonlSessionPersistence extends SessionPersistence {
    * revision guard.
    */
   private readonly coldLogMemo = new Map<SessionId, StoredLog>()
+  /**
+   * Bounded LRU of open decode states keyed by session id, so a read of a log
+   * that only grew decodes the appended bytes. A local append leaves an entry
+   * valid; every other change fails the continued read's file checks.
+   */
+  private readonly logTails = new Map<SessionId, StoredLogTail>()
   /**
    * Generation headers observed by the latest complete listing, keyed by
    * source path and guarded by the stat-derived revision, so a listing reads
@@ -697,21 +811,7 @@ export class JsonlSessionPersistence extends SessionPersistence {
         { kind: 'jsonl', path: selected.sourcePath },
       )
     }
-    const probe = fileRevision(await stat(selected.sourcePath, { bigint: true }))
-    const memoized = this.coldLogMemo.get(id)
-    if (memoized?.status === 'current' && memoized.revision === probe) {
-      this.coldLogMemo.delete(id)
-      this.coldLogMemo.set(id, memoized)
-      return memoized
-    }
-    const current = await readStableJsonlFile(selected.sourcePath, signal)
-    return this.decodeStoredLog(
-      selected.sourcePath,
-      id,
-      current.bytes,
-      fileRevision(current.identity),
-      signal,
-    )
+    return this.readStoredLog(selected.sourcePath, id, signal)
   }
 
   /** Probe the memo and otherwise decode one historical generation under backend cancellation. */
@@ -883,47 +983,145 @@ export class JsonlSessionPersistence extends SessionPersistence {
    */
   async readStoredLog(path: string, expectedId: SessionId, signal?: AbortSignal): Promise<CurrentStoredLog> {
     signal?.throwIfAborted()
-    const probe = fileRevision(await stat(path, { bigint: true }))
+    const probe = await stat(path, { bigint: true })
     const memoized = this.coldLogMemo.get(expectedId)
-    if (memoized?.status === 'current' && memoized.revision === probe) {
-      this.coldLogMemo.delete(expectedId)
-      this.coldLogMemo.set(expectedId, memoized)
+    if (memoized?.status === 'current' && memoized.revision === fileRevision(probe)) {
+      setBounded(this.coldLogMemo, expectedId, memoized, COLD_LOG_MEMO_MAX_ENTRIES)
       return memoized
     }
+    const continued = await this.continueStoredLog(path, expectedId, probe, signal)
+    if (continued !== undefined) return continued
     const { bytes, identity } = await readStableJsonlFile(path, signal)
-    return this.decodeStoredLog(path, expectedId, bytes, fileRevision(identity), signal)
+    return this.decodeStoredLog(path, expectedId, bytes, identity, signal)
   }
 
-  /** Decode and memoize one already-stable current physical snapshot. */
+  /**
+   * Extend the retained decode of `path` with the bytes appended since it was read.
+   * @param path - the artifact file to read.
+   * @param expectedId - the session whose retained decode state continues.
+   * @param probe - the file's stat before this read.
+   * @param signal - optional cancellation for the read and decode work.
+   * @returns the extended log, or `undefined` when only a full read can establish it.
+   */
+  private async continueStoredLog(
+    path: string,
+    expectedId: SessionId,
+    probe: BigIntStats,
+    signal?: AbortSignal,
+  ): Promise<CurrentStoredLog | undefined> {
+    const tail = this.logTails.get(expectedId)
+    const size = Number(probe.size)
+    if (tail === undefined || tail.path !== path || tail.dev !== probe.dev || tail.ino !== probe.ino) return undefined
+    if (size === tail.size && fileRevision(probe) === tail.stored.revision) {
+      setBounded(this.logTails, expectedId, tail, LOG_TAIL_MAX_ENTRIES)
+      return tail.stored
+    }
+    if (size <= tail.size) return undefined
+    const bytes = await readFromAnchor(path, tail, size)
+    signal?.throwIfAborted()
+    if (bytes === undefined || this.logTails.get(expectedId) !== tail) return undefined
+    // A failed or cancelled continuation leaves the scanner partly advanced, so
+    // claim it first; a concurrent read of this Session then decodes in full.
+    this.logTails.delete(expectedId)
+    let stored: CurrentStoredLog
+    try {
+      const scan = await this.scanAppended(tail.scanner, bytes.subarray(tail.anchor.length), signal)
+      if (scan === undefined) return undefined
+      const from = tail.stored.events.length
+      validateStoredEvents(scan.meta, scan.events.slice(from), this.locate(scan.meta))
+      stored = {
+        status: 'current',
+        meta: scan.meta,
+        inheritedEventCount: scan.inheritedEventCount,
+        tornTruncateTo: undefined,
+        recoveredTail: [],
+        ...freezeStoredEvents(scan.events, from),
+        revision: fileRevision(probe),
+      }
+    } catch (_continuationFailed: unknown) {
+      signal?.throwIfAborted()
+      // The full read that follows reports this failure with its own classification.
+      return undefined
+    }
+    this.memoizeStoredLog(expectedId, stored)
+    this.retainLogTail(expectedId, {
+      ...tail,
+      size,
+      anchor: Buffer.from(bytes.subarray(-LOG_TAIL_ANCHOR_BYTES)),
+      stored,
+    })
+    return stored
+  }
+
+  /** Retain one open decode state within the entry and event limits, evicting the least recently read. */
+  private retainLogTail(id: SessionId, tail: StoredLogTail): void {
+    if (tail.stored.events.length > LOG_TAIL_MAX_EVENTS) {
+      this.logTails.delete(id)
+      return
+    }
+    setBounded(this.logTails, id, tail, LOG_TAIL_MAX_ENTRIES)
+    let retained = 0
+    for (const entry of this.logTails.values()) retained += entry.stored.events.length
+    for (const [oldest, entry] of this.logTails) {
+      if (retained <= LOG_TAIL_MAX_EVENTS) break
+      this.logTails.delete(oldest)
+      retained -= entry.stored.events.length
+    }
+  }
+
+  /**
+   * Feed appended bytes to an open scanner and settle the extended log.
+   * @returns the extended scan, or `undefined` when the bytes end inside a frame or record.
+   */
+  private async scanAppended(
+    scanner: SessionLogScanner,
+    appended: Buffer,
+    signal?: AbortSignal,
+  ): Promise<SessionLogScan | undefined> {
+    if (this.compression === 'zstd') {
+      const { frames, tornStart } = scanZstdFrames(appended)
+      if (tornStart !== undefined) return undefined
+      const decoder = createZstdFrameDecoder()
+      try {
+        await scanFrames(scanner, decoder.decode(appended, frames), frames.length, signal)
+      } finally {
+        decoder.close()
+      }
+    } else {
+      scanner.write(appended)
+    }
+    const progress = scanner.checkpoint()
+    if (progress.committedBytes !== progress.inputBytes) return undefined
+    return scanner.settle()
+  }
+
+  /** Decode and memoize one already-stable current physical snapshot, retaining its open decode state. */
   private async decodeStoredLog(
     path: string,
     expectedId: SessionId,
     buffer: Buffer,
-    revision: PersistenceRevision,
+    identity: JsonlPhysicalIdentity,
     signal?: AbortSignal,
   ): Promise<CurrentStoredLog> {
-    let parsed: {
-      meta: SessionHeader
-      inheritedEventCount: SessionLogOffsetType
-      events: SessionEvent[]
-      tornTruncateTo: number | undefined
-      recoveredTail: SessionEvent[]
-    }
+    let parsed: ParsedStoredLog
     try {
       if (this.compression === 'zstd') {
         parsed = await this.readZstdPrefix(buffer, signal)
       } else {
         signal?.throwIfAborted()
-        const { meta, inheritedEventCount, events, committedBytes } = scanLog(buffer)
+        const scanner = openLogScan(buffer)
+        const { meta, inheritedEventCount, events, committedBytes } = scanner.settle()
         signal?.throwIfAborted()
+        const torn = committedBytes < buffer.byteLength
         parsed = {
           meta,
           inheritedEventCount,
           events,
-          tornTruncateTo: committedBytes < buffer.byteLength ? committedBytes : undefined,
+          tornTruncateTo: torn ? committedBytes : undefined,
           // A torn raw tail is one incomplete JSONL line; it holds no complete
           // record to recover.
           recoveredTail: [],
+          scanner: torn ? undefined : scanner,
         }
       }
     } catch (error: unknown) {
@@ -943,25 +1141,31 @@ export class JsonlSessionPersistence extends SessionPersistence {
     assertStoredId(expectedId, parsed.meta)
     const location = this.locate(parsed.meta)
     validateStoredEvents(parsed.meta, parsed.events, location)
-    const { events, ...rest } = parsed
+    const { events, scanner, ...rest } = parsed
     const stored: CurrentStoredLog = {
       status: 'current',
       ...rest,
       ...freezeStoredEvents(events),
-      revision,
+      revision: fileRevision(identity),
     }
     this.memoizeStoredLog(expectedId, stored)
+    if (scanner !== undefined) {
+      this.retainLogTail(expectedId, {
+        path,
+        dev: identity.dev,
+        ino: identity.ino,
+        size: buffer.byteLength,
+        anchor: Buffer.from(buffer.subarray(-LOG_TAIL_ANCHOR_BYTES)),
+        scanner,
+        stored,
+      })
+    }
     return stored
   }
 
   /** Insert one parsed log into the bounded handoff cache. */
   private memoizeStoredLog(id: SessionId, stored: StoredLog): void {
-    this.coldLogMemo.delete(id)
-    this.coldLogMemo.set(id, stored)
-    for (const oldest of this.coldLogMemo.keys()) {
-      if (this.coldLogMemo.size <= COLD_LOG_MEMO_MAX_ENTRIES) break
-      this.coldLogMemo.delete(oldest)
-    }
+    setBounded(this.coldLogMemo, id, stored, COLD_LOG_MEMO_MAX_ENTRIES)
   }
 
   /**
@@ -1077,20 +1281,13 @@ export class JsonlSessionPersistence extends SessionPersistence {
   private async readZstdPrefix(
     buffer: Buffer,
     signal?: AbortSignal,
-  ): Promise<{
-    meta: SessionHeader
-    inheritedEventCount: SessionLogOffsetType
-    events: SessionEvent[]
-    tornTruncateTo: number | undefined
-    recoveredTail: SessionEvent[]
-  }> {
+  ): Promise<ParsedStoredLog> {
     signal?.throwIfAborted()
     const { frames, tornStart } = scanZstdFrames(buffer)
     signal?.throwIfAborted()
     if (frames.length === 0) throw new Error('empty or header-less Zstandard session log')
 
     const decoder = createZstdFrameDecoder()
-    let yieldDeadline = performance.now() + ZSTD_DECODE_YIELD_INTERVAL_MS
     try {
       const decodedFrames = decoder.decode(buffer, frames)
       signal?.throwIfAborted()
@@ -1100,31 +1297,21 @@ export class JsonlSessionPersistence extends SessionPersistence {
       if (headerFrame.done) throw new Error('empty or header-less Zstandard session log')
       assertZstdHeaderFrame(headerFrame.value)
       const scanner = new SessionLogScanner(headerFrame.value)
-
-      let remainingFrames = frames.length - 1
-      for (const plaintext of decodedFrames) {
-        signal?.throwIfAborted()
-        scanner.write(plaintext)
-        remainingFrames -= 1
-        if (remainingFrames > 0 && performance.now() >= yieldDeadline) {
-          await scheduler.yield()
-          signal?.throwIfAborted()
-          yieldDeadline = performance.now() + ZSTD_DECODE_YIELD_INTERVAL_MS
-        }
-      }
+      await scanFrames(scanner, decodedFrames, frames.length - 1, signal)
       signal?.throwIfAborted()
       const complete = scanner.checkpoint()
       if (complete.committedBytes !== complete.inputBytes) {
         throw new Error('corrupt Zstandard session log: complete frame contains a torn JSONL record')
       }
       if (tornStart === undefined) {
-        const prefix = scanner.finish()
+        const prefix = scanner.settle()
         return {
           meta: prefix.meta,
           inheritedEventCount: prefix.inheritedEventCount,
           events: prefix.events,
           tornTruncateTo: undefined,
           recoveredTail: [],
+          scanner,
         }
       }
       // A torn final frame's append never resolved, but complete JSONL records
@@ -1149,6 +1336,7 @@ export class JsonlSessionPersistence extends SessionPersistence {
         events: prefix.events,
         tornTruncateTo: tornStart,
         recoveredTail: prefix.events.slice(complete.eventCount),
+        scanner: undefined,
       }
     } catch (error) {
       /* v8 ignore next -- decoder failure plus concurrent abort is timing-dependent */

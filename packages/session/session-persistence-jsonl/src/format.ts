@@ -323,7 +323,8 @@ export function eventLine(event: SessionEvent): string {
   return JSON.stringify(sessionFormatCatalog.encodeCurrentEvent(event as unknown as SessionFormatEvent))
 }
 
-interface SessionLogScan {
+/** Header, decoded event prefix, and committed byte offset of one scanned log. */
+export interface SessionLogScan {
   meta: SessionHeader
   inheritedEventCount: SessionLogOffsetType
   events: SessionEvent[]
@@ -464,6 +465,21 @@ export class SessionLogScanner {
    */
   finish(): SessionLogScan {
     this.finished = true
+    return this.scan()
+  }
+
+  /**
+   * Validate the records consumed so far as a complete log while keeping the
+   * scan open, so a later `write()` continues it with appended bytes.
+   * @returns the header, a copy of the event prefix, and the committed offset.
+   */
+  settle(): SessionLogScan {
+    const scan = this.scan()
+    return { ...scan, events: [...scan.events] }
+  }
+
+  /** Finish the current-version restore, which leaves it open for later rows. */
+  private scan(): SessionLogScan {
     const artifact = this.restore.finish()
     assertReleasedV4Relationships(artifact, KNOWN_SESSION_EVENT_TYPES)
     return {
@@ -530,9 +546,19 @@ export class SessionLogScanner {
  * @returns the header, preserved event prefix, and byte offset safe to append at.
  */
 export function scanLog(buffer: Buffer): SessionLogScan {
+  return openLogScan(buffer).finish()
+}
+
+/**
+ * Scan a raw JSONL buffer without finishing, so bytes appended to the same
+ * file later can continue the scan.
+ * @param buffer - the raw bytes of the log file (header line first).
+ * @returns an open scanner positioned at the end of `buffer`.
+ */
+export function openLogScan(buffer: Buffer): SessionLogScanner {
   const headerEnd = buffer.indexOf(0x0A)
   if (headerEnd === -1) throw new Error('empty or header-less session log')
   const scanner = new SessionLogScanner(buffer.subarray(0, headerEnd + 1))
   scanner.write(buffer.subarray(headerEnd + 1))
-  return scanner.finish()
+  return scanner
 }

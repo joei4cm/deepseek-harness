@@ -154,6 +154,17 @@ describe('Session format catalog', () => {
     expect(transformed.finish()).toMatchObject({ header: { version: 1 }, events: [event] })
   })
 
+  it('continues a current restore with later rows after finish', () => {
+    const header = { ...oldHeader, version: 1 }
+    const restore = catalog().createRestore(header, { recovery: 'strict', validation: 'transformed' })
+    restore.decodeRow(event)
+    expect(restore.finish().events).toEqual([event])
+
+    const later = { ...event, seq: 1 }
+    restore.decodeRow(later)
+    expect(restore.finish()).toEqual({ header, inheritedEventCount: 0, events: [event, later] })
+  })
+
   it.each([
     new Error('target artifact is incompatible'),
     'non-Error target artifact refusal',

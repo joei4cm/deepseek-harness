@@ -109,7 +109,10 @@ export interface SessionFormatArtifactDecoder {
     rowValue: unknown,
     context: SessionFormatMigrationContext,
   ): void
-  /** Finish row validation and return the exact inherited cut. */
+  /**
+   * Finish row validation and return the exact inherited cut. Validation leaves
+   * the decoder state unchanged, so rows decoded afterwards continue the same body.
+   */
   finish(context: SessionFormatMigrationContext): number
 }
 
@@ -225,6 +228,12 @@ export interface SessionFormatRestore {
   readonly header: SessionFormatHeader
   /** Decode one physical row in file order. */
   decodeRow(rowValue: unknown): void
-  /** Finish every decoder and migration stage and return the current artifact. */
+  /**
+   * Finish every decoder and migration stage and return the current artifact.
+   * A restore of the current version runs no migration stage and stays open: it
+   * can decode later rows and finish again, and each result covers every row so
+   * far. Its results can share one events array that later rows extend, so a
+   * caller that publishes the events copies them. A migrating restore finishes once.
+   */
   finish(): SessionFormatArtifact
 }

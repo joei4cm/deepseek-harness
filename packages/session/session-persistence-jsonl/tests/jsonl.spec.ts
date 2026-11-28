@@ -2,7 +2,10 @@ import { type MessageId, createMessage } from '@deepseek-ai/dsh-llm'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { appendFile, mkdtemp, mkdir, open, rm, readFile, writeFile, readdir, stat, symlink, utimes } from 'node:fs/promises'
+import {
+  appendFile, mkdtemp, mkdir, open, rename, rm, readFile, writeFile, readdir, stat, symlink, truncate, utimes,
+} from 'node:fs/promises'
+import { performance } from 'node:perf_hooks'
 import type { FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -14,8 +17,9 @@ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-j
 import {
   assertNoRetiredHeaderFields, encodeSegment, eventLines, generationLogFilename, generationLogPath,
   logPath, parseGenerationLogFilename, projectDir, projectKey, scanLog, sessionDir, SessionLogScanner,
-  toHeaderLine,
+  toHeaderLine, type JsonlCompression,
 } from '../src/format.ts'
+import { compressZstdFrame } from '../src/zstd.ts'
 import {
   runPersistenceContract, meta, oneTurnLog, releasedV1OneTurnLog,
 } from '../../session-persistence/tests/contract.ts'
@@ -187,6 +191,14 @@ function pausePhysicalRead(path: string): {
     finished: finished.promise,
     release: () => { resume.resolve(undefined) },
   }
+}
+
+/** The backend's private read caches, cleared or inspected to isolate one read path. */
+function readCaches(ctx: Context): {
+  coldLogMemo: Map<SessionId, unknown>
+  logTails: Map<SessionId, unknown>
+} {
+  return ctx.sessionPersistence as unknown as { coldLogMemo: Map<SessionId, unknown>; logTails: Map<SessionId, unknown> }
 }
 
 function rawLogPath(root: string, cwd: string | undefined, id: SessionId): string {
@@ -1589,15 +1601,15 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     expect((await writer.read()).events.length).toBe(oneTurnLog().length)
     expect(readTally.bySuffix.get(path)).toBe(1)
 
-    // A local append invalidates the memo: the next cold read re-parses and
-    // observes the appended suffix.
+    // A local append invalidates the memo, but the next read decodes only the
+    // appended suffix instead of re-reading the whole file.
     await writer.append([
       { type: 'turn/start', seq: SessionSeq(6), time: 9, data: { turn: 2 } },
       { type: 'turn/end', seq: SessionSeq(7), time: 10, data: { turn: 2, reason: { kind: 'completed' } } },
     ] as SessionEvent[])
     await writer.close()
     expect((await readAll(ctx.sessionPersistence, m.id)).events.map(e => e.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
-    expect(readTally.bySuffix.get(path)).toBe(2)
+    expect(readTally.bySuffix.get(path)).toBe(1)
   })
 
   it('a foreign write misses the memo through the revision guard', async () => {
@@ -1619,7 +1631,8 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
 
     readTally.enabled = true
     expect((await readAll(ctx.sessionPersistence, m.id)).events.map(e => e.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
-    expect(readTally.bySuffix.get(path)).toBe(1)
+    // The retained decode continues with the foreign suffix without a whole-file read.
+    expect(readTally.bySuffix.get(path) ?? 0).toBe(0)
   })
 
   it('the cold-log memo keeps only the handoff window and evicts the oldest id', async () => {
@@ -1629,10 +1642,13 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     for (const m of [first, second, third]) await writeLog(ctx.sessionPersistence, m, oneTurnLog())
     readTally.enabled = true
 
+    const internals = readCaches(ctx)
     await readAll(ctx.sessionPersistence, first.id)
     await readAll(ctx.sessionPersistence, second.id)
     await readAll(ctx.sessionPersistence, third.id) // evicts the first id
+    expect([...internals.coldLogMemo.keys()]).toEqual([second.id, third.id])
     await readAll(ctx.sessionPersistence, third.id) // still memoized
+    internals.logTails.clear()
     await readAll(ctx.sessionPersistence, first.id) // re-parses after eviction
     expect(readTally.bySuffix.get(rawLogPath(root, '/work', first.id))).toBe(2)
     expect(readTally.bySuffix.get(rawLogPath(root, '/work', third.id))).toBe(1)
@@ -1643,8 +1659,9 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     await writeLog(ctx.sessionPersistence, m, oneTurnLog())
     const handle = await ctx.sessionPersistence.open(m.id, 'read')
     try {
-      const internals = ctx.sessionPersistence as unknown as { coldLogMemo: Map<SessionId, unknown> }
+      const internals = readCaches(ctx)
       internals.coldLogMemo.clear()
+      internals.logTails.clear()
       statRace.path = rawLogPath(root, '/work', m.id)
       expect((await handle.read()).events).toEqual(oneTurnLog())
       // The memo probe, the initial identity, the mismatching post-read stat
@@ -1662,8 +1679,9 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     await writeLog(ctx.sessionPersistence, m, oneTurnLog())
     const handle = await ctx.sessionPersistence.open(m.id, 'read')
     try {
-      const internals = ctx.sessionPersistence as unknown as { coldLogMemo: Map<SessionId, unknown> }
+      const internals = readCaches(ctx)
       internals.coldLogMemo.clear()
+      internals.logTails.clear()
       statRace.mode = 'churn'
       statRace.path = rawLogPath(root, '/work', m.id)
       // Every stat disagrees, so the bounded read stops after one retry and
@@ -2974,5 +2992,222 @@ describe('JsonlSessionPersistence listing concurrency', () => {
     await expect(listingCtx.sessionPersistence.list()).rejects.toBe(laterSessionFailure)
     listingProbe.failures.set(earlierSession, earlierSessionFailure)
     await expect(listingCtx.sessionPersistence.list()).rejects.toBe(earlierSessionFailure)
+  })
+})
+
+/** A second turn appended after {@link oneTurnLog}, starting at `seq`. */
+function laterTurn(seq: number, turn: number): SessionEvent[] {
+  return [
+    { type: 'turn/start', seq: SessionSeq(seq), time: 20 + seq, data: { turn } },
+    { type: 'turn/end', seq: SessionSeq(seq + 1), time: 21 + seq, data: { turn, reason: { kind: 'completed' } } },
+  ] as SessionEvent[]
+}
+
+describe('JsonlSessionPersistence: continued reads', () => {
+  const compressions = ['none', 'zstd'] as const
+
+  async function mountRoot(compression: JsonlCompression, dir?: string): Promise<{ ctx: Context; dir: string }> {
+    const base = dir ?? await freshRoot()
+    const ctx = new Context()
+    liveContexts.push(ctx)
+    await ctx.plugin(JsonlSessionPersistence, { root: base, compression })
+    return { ctx, dir: base }
+  }
+
+  /** The plaintext records every scanner write received while `read` ran. */
+  async function scannedText<T>(read: () => Promise<T>): Promise<{ result: T; text: string }> {
+    // oxlint-disable-next-line typescript/unbound-method -- The spy calls the original with its own receiver.
+    const write = SessionLogScanner.prototype.write
+    const chunks: Buffer[] = []
+    // A frame decoder reuses its output buffer, so each chunk is copied when written.
+    const writes = vi.spyOn(SessionLogScanner.prototype, 'write').mockImplementation(function (this: SessionLogScanner, chunk) {
+      chunks.push(Buffer.from(chunk))
+      write.call(this, chunk)
+    })
+    try {
+      return { result: await read(), text: Buffer.concat(chunks).toString('utf8') }
+    } finally {
+      writes.mockRestore()
+    }
+  }
+
+  it.each(compressions)('decodes only the records a %s log gained since the last read', async (compression) => {
+    const { ctx, dir } = await mountRoot(compression)
+    const m = meta(`continue-${compression}`, '/work')
+    await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    await readAll(ctx.sessionPersistence, m.id)
+    const added = laterTurn(6, 2)
+    await appendBatch(ctx.sessionPersistence, m.id, added)
+
+    readTally.enabled = true
+    const { result, text } = await scannedText(() => readAll(ctx.sessionPersistence, m.id))
+    expect(result.events).toEqual([...oneTurnLog(), ...added])
+    expect(text).toBe(`${eventLines(added)}\n`)
+    expect(readTally.bySuffix.get(logPath(dir, '/work', m.id, compression)) ?? 0).toBe(0)
+
+    // A foreign backend's append continues the same retained decode.
+    const { ctx: foreign } = await mountRoot(compression, dir)
+    const third = laterTurn(8, 3)
+    await appendBatch(foreign.sessionPersistence, m.id, third)
+    const next = await scannedText(() => readAll(ctx.sessionPersistence, m.id))
+    expect(next.result.events).toEqual([...oneTurnLog(), ...added, ...third])
+    expect(next.text).toBe(`${eventLines(third)}\n`)
+  })
+
+  it.each(compressions)('serves an unchanged %s log without decoding after the memo evicts it', async (compression) => {
+    const { ctx } = await mountRoot(compression)
+    const ids = ['a', 'b', 'c'].map(suffix => meta(`unchanged-${compression}-${suffix}`, '/work'))
+    for (const m of ids) await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    for (const m of ids) await readAll(ctx.sessionPersistence, m.id)
+    expect([...readCaches(ctx).coldLogMemo.keys()]).not.toContain(ids[0]?.id)
+
+    const settle = vi.spyOn(SessionLogScanner.prototype, 'settle')
+    expect((await readAll(ctx.sessionPersistence, ids[0]!.id)).events).toEqual(oneTurnLog())
+    expect(settle).not.toHaveBeenCalled()
+  })
+
+  it('keeps the decode state of the most recently read Sessions', async () => {
+    const { ctx } = await mountRoot('zstd')
+    const ids = Array.from({ length: 9 }, (_, index) => meta(`retained-${index}`, '/work'))
+    for (const m of ids) await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    for (const m of ids) await readAll(ctx.sessionPersistence, m.id)
+    expect([...readCaches(ctx).logTails.keys()]).toEqual(ids.slice(1).map(m => m.id))
+  })
+
+  it('keeps retained decode states within 250,000 events, evicting the least recently read', async () => {
+    const { ctx, dir } = await mountRoot('none')
+    const turns = (count: number): SessionEvent[] => Array.from({ length: count }, (_, index) => laterTurn(2 * index, index + 1)).flat()
+    const small = meta('budget-small', '/work')
+    const long = meta('budget-long', '/work')
+    const path = logPath(dir, '/work', long.id, 'none')
+    await writeLog(ctx.sessionPersistence, small, oneTurnLog())
+    await writeLog(ctx.sessionPersistence, long, turns(1))
+    // Appended as raw lines, so writing the log does not validate every event again.
+    await appendFile(path, `${eventLines(turns(124_999).slice(2))}\n`)
+
+    await readAll(ctx.sessionPersistence, small.id)
+    // 249,998 events fit alone, but not with the 6 already retained.
+    await readAll(ctx.sessionPersistence, long.id)
+    expect([...readCaches(ctx).logTails.keys()]).toEqual([long.id])
+
+    // Growing past the limit releases the log's own decode state.
+    await appendFile(path, `${eventLines(turns(125_001).slice(249_998))}\n`)
+    expect((await readAll(ctx.sessionPersistence, long.id)).events).toHaveLength(250_002)
+    expect(readCaches(ctx).logTails.size).toBe(0)
+  })
+
+  it.each(compressions)('decodes a %s log in full when its file was replaced, rewritten, shrunk, or touched', async (compression) => {
+    const { ctx, dir } = await mountRoot(compression)
+    const m = meta(`changed-${compression}`, '/work')
+    const path = logPath(dir, '/work', m.id, compression)
+    await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    const original = await readFile(path)
+    const fullRead = async (expected: readonly SessionEvent[]): Promise<void> => {
+      const { result, text } = await scannedText(() => readAll(ctx.sessionPersistence, m.id))
+      expect(result.events).toEqual(expected)
+      expect(text).toBe(`${eventLines(expected)}\n`)
+    }
+
+    // A different log, written elsewhere, whose last record differs from the original.
+    const { ctx: other, dir: otherDir } = await mountRoot(compression)
+    const rewritten = [
+      ...oneTurnLog().slice(0, 5),
+      { ...oneTurnLog()[5], time: 999_999 } as SessionEvent,
+      ...laterTurn(6, 2),
+    ]
+    await writeLog(other.sessionPersistence, m, rewritten)
+    const rewrittenBytes = await readFile(logPath(otherDir, '/work', m.id, compression))
+
+    await readAll(ctx.sessionPersistence, m.id)
+    // Rewritten in place: same file, more bytes, different consumed bytes.
+    await writeFile(path, rewrittenBytes)
+    await fullRead(rewritten)
+
+    // Replaced by another file.
+    await writeFile(`${path}.next`, original)
+    await rename(`${path}.next`, path)
+    await fullRead(oneTurnLog())
+
+    // Shrunk to an earlier record or frame.
+    await appendBatch(ctx.sessionPersistence, m.id, laterTurn(6, 2))
+    await readAll(ctx.sessionPersistence, m.id)
+    await truncate(path, original.length)
+    await fullRead(oneTurnLog())
+
+    // Touched without growing.
+    await utimes(path, new Date(), new Date(Date.now() + 60_000))
+    await fullRead(oneTurnLog())
+  })
+
+  it.each(compressions)('decodes a %s log in full when its appended bytes end inside a record', async (compression) => {
+    const { ctx, dir } = await mountRoot(compression)
+    const m = meta(`torn-${compression}`, '/work')
+    const path = logPath(dir, '/work', m.id, compression)
+    await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    await readAll(ctx.sessionPersistence, m.id)
+    const line = `${eventLines(laterTurn(6, 2))}\n`
+    if (compression === 'zstd') {
+      const frame = await compressZstdFrame(line)
+      await appendFile(path, frame.subarray(0, frame.length - 6))
+    } else {
+      await appendFile(path, line.slice(0, 20))
+    }
+    const { result, text } = await scannedText(() => readAll(ctx.sessionPersistence, m.id))
+    expect(result.events).toEqual(oneTurnLog())
+    expect(text).toContain(`${eventLines(oneTurnLog())}\n`)
+  })
+
+  it('reports a corrupt appended frame as a full read does', async () => {
+    const { ctx, dir } = await mountRoot('zstd')
+    const m = meta('corrupt-appended', '/work')
+    await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    await readAll(ctx.sessionPersistence, m.id)
+    await appendFile(logPath(dir, '/work', m.id, 'zstd'), await compressZstdFrame('not json\n'))
+
+    await expect(readAll(ctx.sessionPersistence, m.id)).rejects.toThrow(/stored log is corrupt/)
+  })
+
+  it.each(compressions)('serves concurrent reads of a grown %s log', async (compression) => {
+    const { ctx } = await mountRoot(compression)
+    const m = meta(`concurrent-${compression}`, '/work')
+    await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    await readAll(ctx.sessionPersistence, m.id)
+    await appendBatch(ctx.sessionPersistence, m.id, laterTurn(6, 2))
+
+    const reads = await Promise.all([
+      readAll(ctx.sessionPersistence, m.id),
+      readAll(ctx.sessionPersistence, m.id),
+    ])
+    for (const read of reads) expect(read.events).toEqual([...oneTurnLog(), ...laterTurn(6, 2)])
+  })
+
+  it('stops a continued decode at cancellation and decodes in full afterwards', async () => {
+    const { ctx } = await mountRoot('zstd')
+    const m = meta('cancel-continued', '/work')
+    await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    const handle = await ctx.sessionPersistence.open(m.id, 'read')
+    try {
+      const writer = await ctx.sessionPersistence.open(m.id, 'write')
+      await writer.append(laterTurn(6, 2))
+      await writer.append(laterTurn(8, 3))
+      await writer.close()
+      const controller = new AbortController()
+      const reason = new Error('cancel the continued decode')
+      // The first appended frame exhausts the decode slice, so the read yields
+      // before the second, and cancellation arrives during that yield.
+      const now = vi.spyOn(performance, 'now').mockReturnValueOnce(0).mockReturnValue(501)
+      const yielded = vi.spyOn(scheduler, 'yield').mockImplementationOnce(async () => { controller.abort(reason) })
+      await expect(handle.read(0, Number.MAX_SAFE_INTEGER, { signal: controller.signal })).rejects.toBe(reason)
+      expect(yielded).toHaveBeenCalledOnce()
+      now.mockRestore()
+      yielded.mockRestore()
+
+      const { result, text } = await scannedText(() => handle.read())
+      const all = [...oneTurnLog(), ...laterTurn(6, 2), ...laterTurn(8, 3)]
+      expect(result.events).toEqual(all)
+      expect(text).toBe(`${eventLines(all)}\n`)
+    } finally {
+      await handle.close()
+    }
   })
 })

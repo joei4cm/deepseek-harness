@@ -106,7 +106,7 @@ JSONL fork 创建会把提供的子会话历史复制到子文件，再返回写
 
 ### 设计理念
 
-该后端拥有自己完整的存储运行时（`src/storage.ts`）：`JsonlSessionHandle` 承载逐句柄修改链、带固定批处理窗口与 single-flight 排空的已路由实时事件缓冲、单调读取与幂等 close；一个 tracker 持有进程内单写者认领、teardown 清扫所遍历的打开句柄集合，以及后端自己的会话监听器所路由进的已创建但未实体化待定会话。历史正文读取共享每个 Session 唯一的一次 Decode/Migrate preparation，按 revision 为键的有界 memo 让紧接的观察到恢复交接复用该解析；backend 在 memo 化前只对每个 event graph 深度冻结一次，因此后续 handle read 无需复制或再次冻结。只有写 open 才发布准备好的后继。本包暴露插件导出与配置类型——具体类是私有的，因此消费方只耦合 `ctx.sessionPersistence`，其可观察行为由共享 seam 测试套件（`runPersistenceContract`/`runLiveWritePathContract`）钉住。物理修订号组合 device、inode、size 与纳秒时间戳，供准备缓存、稳定读取重试及发布检查使用。历史格式的公开修订号还加入所选路径排序后及其物理修订号的 SHA-256 指纹；锁文件与保留但未被选中的代际不参与计算。
+该后端拥有自己完整的存储运行时（`src/storage.ts`）：`JsonlSessionHandle` 承载逐句柄修改链、带固定批处理窗口与 single-flight 排空的已路由实时事件缓冲、单调读取与幂等 close；一个 tracker 持有进程内单写者认领、teardown 清扫所遍历的打开句柄集合，以及后端自己的会话监听器所路由进的已创建但未实体化待定会话。历史正文读取共享每个 Session 唯一的一次 Decode/Migrate preparation，按 revision 为键的有界 memo 让紧接的观察到恢复交接复用该解析；backend 在 memo 化前只对每个 event graph 深度冻结一次，因此后续 handle read 无需复制或再次冻结。当前版本的读取保留最近读取的 8 个日志的已打开解码器，这些日志合计最多 250,000 个事件；这些是内部复用上限，不是配置项。若该日志只是变长，且同一文件在上次读取的结尾处仍是相同的最后 64 字节，读取只解码追加的字节，重新对整个日志运行关系检查，并只校验与冻结新事件。日志被重写、替换、截短或尾部撕裂，同一日志被并发读取，或继续解码出现任何失败时，回退为完整解码。只有写 open 才发布准备好的后继。本包暴露插件导出与配置类型——具体类是私有的，因此消费方只耦合 `ctx.sessionPersistence`，其可观察行为由共享 seam 测试套件（`runPersistenceContract`/`runLiveWritePathContract`）钉住。物理修订号组合 device、inode、size 与纳秒时间戳，供准备缓存、稳定读取重试及发布检查使用。历史格式的公开修订号还加入所选路径排序后及其物理修订号的 SHA-256 指纹；锁文件与保留但未被选中的代际不参与计算。
 
 ### 物理编码
 
