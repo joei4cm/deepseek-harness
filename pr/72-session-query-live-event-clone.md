@@ -54,7 +54,32 @@ None。没有新增或删除任何包依赖，包职责不变。
 <details><summary>Proof</summary>
 
 ```
-PROOF_PLACEHOLDER
+$ pnpm exec vitest run packages/session-query/session-query \
+    packages/session-query/session-query-sqlite \
+    packages/experimental/tool-session-query --maxWorkers=2 --coverage \
+    --coverage.include='packages/session-query/session-query/src/corpus.ts' \
+    --coverage.include='packages/session-query/session-query/src/index.ts'
+ Test Files  9 passed (9)
+      Tests  276 passed (276)
+Statements   : 100% ( 201/201 )
+Branches     : 100% ( 87/87 )
+Functions    : 100% ( 45/45 )
+Lines        : 100% ( 184/184 )
+
+$ pnpm run verify-no-unknown-casts
+verify-no-unknown-casts: no new assertions; 1199 existing assertions remain.
+$ pnpm run verify-empty-catch
+verify-empty-catch: no new silent catches; 0 recorded clauses remain.
+$ pnpm run lint                    # exit 0
+$ pnpm run typecheck
+run-gates: 5 passed, 0 failed, 0 skipped in 95.46s.
+$ pnpm run build
+run-gates: 10 passed, 0 failed, 0 skipped in 68.80s.
+$ pnpm run duplication
+Found 0 clones.
+
+$ benchmark (20,000 events, 100 reads, local Linux 16-core, Node v24.22.3)
+BENCH events=20000 reads=100 before=8938.9 ms (89.39 ms/read) after=6.4 ms (0.064 ms/read)
 ```
 
 </details>
