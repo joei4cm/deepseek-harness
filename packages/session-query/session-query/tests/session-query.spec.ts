@@ -1140,6 +1140,58 @@ describe('session-query exact reads', () => {
     }
   })
 
+  it('clones only the header and requested window for live and persisted reads', async () => {
+    const ctx = await liveContext()
+    const session = ctx.sessions.create(brandString<SessionId>('live-window'), { meta: { cwd: '/work' } })
+    session.append('turn/start', { turn: 1 })
+    for (const text of ['one', 'two', 'three']) {
+      session.append(
+        'user/message',
+        createUserMessage({
+          content: [{ type: 'text', text }], source: { kind: 'user' },
+        }),
+        { surfaceOp: 'append' },
+      )
+    }
+
+    const clones = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      const single = await ctx.sessionQuery.readEvent({ sessionId: session.id, seq: SessionSeq(1) })
+      // One header clone plus the single target event; the live snapshot is shared.
+      expect(clones).toHaveBeenCalledTimes(2)
+      expect(single.target).not.toBe(session.eventAt(SessionSeq(1)))
+      Object.assign(single.session, { createdAt: -1 })
+      expect(session.header.createdAt).not.toBe(-1)
+
+      clones.mockClear()
+      await ctx.sessionQuery.readEvent({ sessionId: session.id, seq: SessionSeq(2), before: 1, after: 1 })
+      // One header clone plus the three events in [1, 3].
+      expect(clones).toHaveBeenCalledTimes(4)
+
+      clones.mockClear()
+      await ctx.sessionQuery.listEvents(session.id)
+      await ctx.sessionQuery.traceEvent({ sessionId: session.id, seq: SessionSeq(2) })
+      // Header-only clones: neither read clones any event from the log.
+      expect(clones.mock.calls.filter(([value]) => (value as SessionEvent)?.type === 'user/message')).toHaveLength(0)
+
+      // Persisted readEvent also clones only the windowed events beyond the backend read.
+      const durable = header('persisted-window', 5, { cwd: '/work' })
+      const durableEvents = [...session.snapshotEvents()]
+      TestPersistence.reset([{ meta: durable, events: durableEvents }])
+      await ctx.plugin(TestPersistence)
+      clones.mockClear()
+      const persisted = await ctx.sessionQuery.readEvent({ sessionId: durable.id, seq: SessionSeq(2) })
+      expect(persisted.target.seq).toBe(2)
+      // TestPersistence.read() itself clones the entry's events array once;
+      // SessionCorpus.load() must not clone every event again.
+      const clonedMessages = clones.mock.calls
+        .filter(([value]) => (value as SessionEvent)?.type === 'user/message')
+      expect(clonedMessages).toHaveLength(1)
+    } finally {
+      clones.mockRestore()
+    }
+  })
+
   it('merges authoritative persistence with live precedence and detects conflicts', async () => {
     const shared = header('shared', 3, { cwd: '/same' })
     const durable = header('durable', 2)

@@ -210,7 +210,7 @@ export abstract class SessionQueryEngine extends Service {
       currentSessionMessageProjections,
     )
     return {
-      session: structuredClone(loaded.header),
+      session: loaded.header,
       inheritedEventCount: loaded.inheritedEventCount,
       events: loaded.events.map(snapshotSessionEvent),
     }
@@ -329,7 +329,7 @@ export abstract class SessionQueryEngine extends Service {
   async readSurface(sessionId: SessionId): Promise<SessionSurfaceSnapshot> {
     const loaded = await this._corpus.load(sessionId)
     return {
-      session: structuredClone(loaded.header),
+      session: loaded.header,
       inheritedEventCount: loaded.inheritedEventCount,
       capturedThroughSeq: loaded.events.at(-1)?.seq ?? null,
       events: tracing.currentSurfaceEvents(sessionId, loaded.events),
@@ -403,7 +403,7 @@ export abstract class SessionQueryEngine extends Service {
         ? targetSnapshot
         : snapshotSessionEvent(event))
     return {
-      session: structuredClone(loaded.header),
+      session: loaded.header,
       inheritedEventCount: loaded.inheritedEventCount,
       target: targetSnapshot,
       events,

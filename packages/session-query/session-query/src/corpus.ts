@@ -9,14 +9,17 @@ import { SessionQueryError } from './config.ts'
 import { readColdSessionLog, type ColdSessionLog } from './cold-read.ts'
 import { assertSessionHeadersCompatible } from './sources.ts'
 
-/** Detached source selected for one exact read. */
+/** Source selected for one exact read. */
 export interface LogicalSession {
   /** Cloned source header. */
   header: SessionHeader
   /** Exact fork-inherited event count paired with {@link header}. */
   inheritedEventCount: SessionLogOffset
-  /** Cloned raw event log. */
-  events: SessionEvent[]
+  /**
+   * Read-only raw event log paired with {@link header}. Callers must clone any
+   * event they return to external consumers.
+   */
+  readonly events: readonly SessionEvent[]
 }
 
 /** Borrowed source visible only during one synchronous batch projection. */
@@ -87,13 +90,13 @@ export class SessionCorpus {
   }
 
   /**
-   * Load one logical source, preferring a detached live snapshot.
+   * Load one logical source, preferring a live snapshot.
    *
    * A known live target never consults persistence, so an optional backend's
    * failure cannot make current in-memory history unreadable.
    * @param sessionId - session to resolve.
    * @param signal - optional cancellation for persisted source resolution.
-   * @returns detached live-preferred header and events.
+   * @returns live-preferred cloned header and read-only events.
    */
   async load(sessionId: SessionId, signal?: AbortSignal): Promise<LogicalSession> {
     signal?.throwIfAborted()
@@ -120,7 +123,7 @@ export class SessionCorpus {
     const snapshot = {
       header: structuredClone(loaded.header),
       inheritedEventCount: loaded.inheritedEventCount,
-      events: loaded.events.map(event => structuredClone(event)),
+      events: loaded.events,
     }
     signal?.throwIfAborted()
     return snapshot
@@ -305,8 +308,10 @@ function snapshotLive(session: Session): LogicalSession {
   return {
     header: structuredClone(session.header),
     inheritedEventCount: session.inheritedEventCount,
+    // The live log is already deeply frozen: snapshotEvents shares a frozen
+    // snapshot cached until the next append, so a read never re-clones history.
     // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
-    events: session.snapshotEvents().map(event => structuredClone(event)),
+    events: session.snapshotEvents(),
   }
 }
 
