@@ -238,18 +238,20 @@ export class SubagentManager {
    */
   async drain(): Promise<void> {
     this.draining = true
-    for (const pending of this.materializations) pending.controller.abort()
-    await Promise.all([...this.materializations].map(materialization => materialization.settled))
     await this.stopResidentChildren()
   }
 
   /**
    * Stop every resident child without closing manager admission. Session
    * persistence withdrawal calls this so each child publishes its closing
-   * events before the backend detaches its live-event router.
+   * events before the backend detaches its live-event router. Materializations
+   * admitted before the sweep abort and roll back first, so a creation that
+   * was still in flight never publishes into the withdrawn backend.
    * @returns settlement of every stopped child.
    */
   async stopResidentChildren(): Promise<void> {
+    for (const pending of this.materializations) pending.controller.abort()
+    await Promise.all([...this.materializations].map(materialization => materialization.settled))
     await this.disposeRoots([...this.resident.values()], 'activation(s)')
   }
 

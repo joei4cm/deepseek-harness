@@ -1713,6 +1713,39 @@ describe('continuable durability and teardown', () => {
     expect(warnings.join('\n')).not.toContain('final session flush')
   })
 
+  it('aborts a gated materialization during withdrawal instead of leaving it a resident of the withdrawn backend', async () => {
+    const { ctx, parent, disposePersistence } = await setup([textResponse('unused')])
+    const childId = brandString<SessionId>('gated-materialization')
+    const gate = Promise.withResolvers<undefined>()
+    const reached = Promise.withResolvers<undefined>()
+    // Installed after setup, so only child agents enter the gate; the awaited
+    // serial listener holds the materialization before it can publish residency.
+    const detach = ctx.on('agent/created', ({ agent }) => {
+      if (agent.session.header.parentSession === undefined) return
+      reached.resolve(undefined)
+      return gate.promise
+    })
+    // The gated creation either rolls back on abort or completes and is swept;
+    // both settle without leaving an activation, so only the ordering matters.
+    void ctx.subagents.startActivation({ ...startSpec(parent), childId, delivery: 'parent' }).catch(() => undefined)
+    try {
+      await reached.promise
+      const withdrawn = disposePersistence!()
+      let withdrawalSettled = false
+      void withdrawn.then(() => { withdrawalSettled = true }, () => { withdrawalSettled = true })
+      await vi.waitFor(() => { expect(ctx.get('sessionPersistence')).toBeUndefined() })
+      // The sweep aborts the gated materialization first, so withdrawal cannot
+      // settle while the creation is still in flight.
+      expect(withdrawalSettled).toBe(false)
+      gate.resolve(undefined)
+      await withdrawn
+      await waitNoActivation(ctx, childId)
+    } finally {
+      gate.resolve(undefined)
+      detach()
+    }
+  })
+
   it('logs a failed final flush after every listener settles without failing the Activation', async () => {
     const { ctx, parent } = await setup([textResponse('answer')])
     const warnings: string[] = []
