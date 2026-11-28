@@ -37,6 +37,7 @@ import type { SessionRemotes } from './remotes.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
+import { RebaselineCoalescer } from '../rebaseline-coalescer.ts'
 import {
   ClientAssistantStream,
   type ClientAssistantStreamResult,
@@ -163,6 +164,8 @@ export class Session implements SessionFace {
   }>()
   /** Owns the addressed page/follow lifecycle while this Session is open. */
   private events: SessionEventStream | undefined
+  /** Bounds the follow rebuilds one assistant rebaseline burst costs. */
+  private readonly rebaseline = new RebaselineCoalescer(() => { this.restartFollow() })
 
   /**
    * Per-session projection value store (push model; see the session-projection
@@ -587,6 +590,7 @@ export class Session implements SessionFace {
     if (this.openState === 'cold') return // never opened: no window to rebuild (doOpen flips to 'loading' synchronously, so cold implies no in-flight open)
     const generation = ++this.openGeneration
     this.clearOlderHistory()
+    this.rebaseline.dispose()
     const events = this.events
     this.events = undefined
     await events?.dispose()
@@ -714,6 +718,7 @@ export class Session implements SessionFace {
     if (this.openState === 'cold') return
     this.openGeneration++
     this.clearOlderHistory()
+    this.rebaseline.dispose()
     const events = this.events
     this.events = undefined
     this.openPromise = null
@@ -740,6 +745,7 @@ export class Session implements SessionFace {
     }
     this.openGeneration++
     this.clearOlderHistory()
+    this.rebaseline.dispose()
     const events = this.events
     this.events = undefined
     await events?.dispose()
@@ -812,6 +818,9 @@ export class Session implements SessionFace {
     // attempts makes a held notification reopen follow once for an atomic
     // page/baseline pair instead of applying it to an unrelated repair cut.
     const visible = this.assistantStream.replace(entries, assistantStream)
+    // The fresh baseline replaced the fold's state, so it resolves the burst
+    // that asked for the rebuild.
+    this.rebaseline.resolve()
     if (this.olderRequest !== null && this.loadingOlder && !this.olderRequest.recovering) {
       this.olderRequest.invalidated = true
       this.olderRequest.page = null
@@ -846,12 +855,23 @@ export class Session implements SessionFace {
     this.notifier.markDirty()
   }
 
+  /**
+   * Replace the follow generation after the assistant fold lost step with the Host.
+   *
+   * The restart is deferred to a microtask so the current follow frame
+   * finishes before its generation is replaced.
+   */
+  private restartFollow(): void {
+    const events = this.events
+    queueMicrotask(() => {
+      if (events !== undefined && this.events === events) events.restart()
+    })
+  }
+
   private publishAssistantEntry(result: ClientAssistantStreamResult): void {
     if (result?.type === 'rebaseline') {
-      const events = this.events
-      queueMicrotask(() => {
-        if (events !== undefined && this.events === events) events.restart()
-      })
+      // One rebaseline burst costs one follow rebuild per coalescing window.
+      this.rebaseline.request()
       return
     }
     if (result?.type === 'settlement') {
@@ -1035,6 +1055,7 @@ export class Session implements SessionFace {
     if (!isRemoteFailure(error)) throw error
     this.openGeneration++
     this.clearOlderHistory()
+    this.rebaseline.dispose()
     this.events = undefined
     this.openPromise = null
     this.openState = 'error'

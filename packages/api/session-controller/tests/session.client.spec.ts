@@ -9,6 +9,7 @@ import { describe, expect, onTestFinished, vi } from 'vitest'
 import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { AttachmentId } from '@deepseek-ai/dsh-attachment/types'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import type { LlmAttemptId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
 import { RemoteError, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
@@ -16,7 +17,8 @@ import { ok, type RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import { Session } from '../src/client/sessions/session.ts'
 import { SessionEventStream } from '../src/client/transport.ts'
-import type { SessionFollowRequest, SessionEventsPage, SessionPageRequest } from '../src/types.ts'
+import type { SessionFollowFrame, SessionFollowRequest, SessionEventsPage, SessionPageRequest } from '../src/types.ts'
+import { REBASELINE_WINDOW_MS } from '../src/client/rebaseline-coalescer.ts'
 import { entries, ev, historyValue, plainTurn } from './event-script.client.ts'
 import { sessionBench } from './remote/bench.client.ts'
 import {
@@ -1410,6 +1412,93 @@ describe('resync', () => {
     const snapshot = session.getSnapshot()
     expect(snapshot.openState).toBe('open') // stale failure did not settle the fresh generation into error
     expect(eventSeqs(session)).toEqual(plainTurn(SessionSeq(6), 1, '新', '代').map(event => event.seq))
+  })
+})
+
+describe('assistant rebaseline', () => {
+  const ATTEMPT = brandString<LlmAttemptId>('rebaseline-storm-attempt')
+
+  /** One frame of a follow generation whose dense chunk index skips ahead of the known attempt. */
+  function storm(revision: number): SessionFollowFrame {
+    return {
+      type: 'assistant-stream',
+      frame: revision === 1
+        ? { type: 'start', attemptId: ATTEMPT, revision, startedAfterSeq: -1, turn: 1, step: 1 }
+        : {
+          type: 'chunk', attemptId: ATTEMPT, revision, index: revision + 3, time: revision,
+          chunk: { type: 'text-delta', index: 0, text: `lost ${String(revision)}` },
+        },
+    }
+  }
+
+  /** Let the Session's follow consumer run without advancing the faked timers. */
+  async function settle(done: () => boolean): Promise<void> {
+    for (let turn = 0; turn < 500 && !done(); turn++) {
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+    }
+    expect(done()).toBe(true)
+  }
+
+  /** Deliver a rebaseline burst of `frames` mismatched frames to the open follow generation. */
+  async function burst(mock: RemoteMock, frames: number): Promise<void> {
+    for (let revision = 1; revision <= frames + 1; revision++) {
+      mock.streams.push(FOLLOW, storm(revision))
+      await mock.streams.drained(FOLLOW)
+      await settle(() => true)
+    }
+  }
+
+  it('rebuilds follow once per window for a rebaseline storm instead of once per frame', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    mock.stream(FOLLOW, followScript(history(plainTurn(SessionSeq(0), 0, '风', '暴'))))
+    await session.open()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    onTestFinished(() => { vi.useRealTimers() })
+    const opens = (): number => mock.log.requests(FOLLOW).length
+    const replaced = (): number => session.eventSource.getSnapshot().revision
+
+    // The first rebaseline of a burst rebuilds follow at once.
+    let revision = replaced()
+    await burst(mock, 1)
+    await settle(() => opens() === 2 && replaced() > revision)
+
+    // The rest of the storm inside the window is absorbed by that rebuild.
+    revision = replaced()
+    await burst(mock, 20)
+    expect(opens()).toBe(2)
+
+    // The window closes with the storm still unresolved, so it rebuilds once more.
+    await vi.advanceTimersByTimeAsync(REBASELINE_WINDOW_MS)
+    await settle(() => opens() === 3 && replaced() > revision)
+
+    // The fresh baseline resolved the burst: the next window closes without a rebuild.
+    await vi.advanceTimersByTimeAsync(REBASELINE_WINDOW_MS)
+    await settle(() => true)
+    expect(opens()).toBe(3)
+
+    // A later burst is not delayed by the earlier one.
+    await burst(mock, 1)
+    await settle(() => opens() === 4)
+    expect(session.getSnapshot().openState).toBe('open')
+  })
+
+  it('drops an unresolved storm when the Session disconnects', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    mock.stream(FOLLOW, followScript(history(plainTurn(SessionSeq(0), 0, '断', '开'))))
+    await session.open()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    onTestFinished(() => { vi.useRealTimers() })
+    const opens = (): number => mock.log.requests(FOLLOW).length
+
+    await burst(mock, 1)
+    await settle(() => opens() === 2)
+    await burst(mock, 5)
+    await session.disconnect()
+    await vi.advanceTimersByTimeAsync(REBASELINE_WINDOW_MS * 2)
+    await settle(() => true)
+
+    expect(opens()).toBe(2)
+    expect(session.getSnapshot().openState).toBe('cold')
   })
 })
 
