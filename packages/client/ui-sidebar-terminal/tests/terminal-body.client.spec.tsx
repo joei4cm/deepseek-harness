@@ -15,6 +15,7 @@ import { en, zh } from '../src/client/locales.ts'
 const fake = vi.hoisted(() => ({
   terminals: [] as FakeTerminal[],
   dimensions: { cols: 120, rows: 40 } as { cols: number; rows: number } | undefined,
+  links: [] as { handler: (event: MouseEvent, uri: string) => void }[],
 }))
 class FakeTerminal {
   options: { disableStdin?: boolean; theme?: ITheme; fontFamily?: string; fontSize?: number }
@@ -40,6 +41,9 @@ class FakeTerminal {
 }
 vi.mock('@xterm/xterm', () => ({ Terminal: vi.fn(function (options: object) { return new FakeTerminal(options) }) }))
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { proposeDimensions() { return fake.dimensions } } }))
+vi.mock('@xterm/addon-web-links', () => ({
+  WebLinksAddon: vi.fn(function (handler: (event: MouseEvent, uri: string) => void) { fake.links.push({ handler }) }),
+}))
 
 let measure: (() => void) | undefined
 const disconnect = vi.fn()
@@ -47,6 +51,7 @@ let boxWidth = 800
 let boxHeight = 600
 beforeEach(() => {
   fake.terminals.length = 0
+  fake.links.length = 0
   fake.dimensions = { cols: 120, rows: 40 }
   boxWidth = 800
   boxHeight = 600
@@ -137,6 +142,23 @@ it('shows only the terminal screen while connected and detaches on unmount', () 
   expect(h.view.container.querySelector('header')).toBeNull()
   h.view.unmount()
   expect(h.detach).toHaveBeenCalledOnce()
+})
+
+it('opens printed web URLs through the link addon and refuses other schemes', () => {
+  mount({ ...idle, info, phase: 'connected', writable: true })
+  expect(fake.links).toHaveLength(1)
+  const open = vi.fn()
+  vi.stubGlobal('open', open)
+  const handler = fake.links[0]!.handler
+  handler(new MouseEvent('click'), 'https://localhost:5173/')
+  expect(open).toHaveBeenCalledWith('https://localhost:5173/', '_blank', 'noopener,noreferrer')
+  open.mockClear()
+  handler(new MouseEvent('click'), 'http://127.0.0.1:3000/api')
+  expect(open).toHaveBeenCalledTimes(1)
+  open.mockClear()
+  handler(new MouseEvent('click'), 'file:///etc/passwd')
+  handler(new MouseEvent('click'), 'javascript:alert(1)')
+  expect(open).not.toHaveBeenCalled()
 })
 
 it('keeps one emulator across rename and locale updates, applies snapshots and output once, and releases listeners', () => {

@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Button, IconPlusOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TerminalViewState, TerminalView } from '@deepseek-ai/dsh-api-terminal-controller/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -105,6 +106,14 @@ function TerminalScreen({ state, model, visible, label, theme }: {
     })
     const addon = new FitAddon()
     xterm.loadAddon(addon)
+    // Open the resolved URL in one request: the addon's default opens an
+    // about:blank popup first, which the Desktop window handler denies because
+    // it is not a web URL. Terminal output is untrusted, so the protocol
+    // whitelist also stays local instead of relying on the addon's regex alone.
+    xterm.loadAddon(new WebLinksAddon((_event, uri) => {
+      if (!/^https?:\/\//.test(uri)) return
+      window.open(uri, '_blank', 'noopener,noreferrer')
+    }))
     xterm.open(node)
     const palette = new TerminalTheme(xterm)
     colors.current = palette

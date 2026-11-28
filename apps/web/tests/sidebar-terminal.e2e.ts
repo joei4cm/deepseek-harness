@@ -384,6 +384,43 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     expect(tripwire.pageErrors).toEqual([])
   })
 
+  it('opens a printed web URL in a browser context when clicked and keeps other schemes inert', async () => {
+    onTestFailed(() => saveFailureShot(page, 'sidebar-terminal-link'))
+    await openTerminal(page)
+    const terminal = page.locator('[data-sidebar-terminal]')
+    const screen = page.locator('.xterm-rows:visible')
+    const target = `${new URL(scaffold.baseUrl).origin}/terminal-link-open-probe`
+    await command(page, `printf '${target}\\nfile:///etc/hosts\\n'`)
+    const link = screen.getByText(target, { exact: true })
+    await link.waitFor()
+    // Pointer events land on the xterm screen layer, so drive the real mouse at the link's cell.
+    const box = await link.boundingBox()
+    if (box === null) throw new Error('The printed link has no bounding box')
+    const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    await page.mouse.move(center.x, center.y)
+    // The screen turns its cursor into the link pointer only after the provider resolved this row.
+    await terminal.locator('.xterm-screen.xterm-cursor-pointer').waitFor({ timeout: 5_000 })
+    await terminal.screenshot({ path: `${shots}/link-hover.png`, animations: 'disabled' })
+    const popup = page.context().waitForEvent('page', { timeout: 15_000 })
+    await page.mouse.down()
+    await page.mouse.up()
+    expect((await popup).url()).toBe(target)
+    const inert = screen.getByText('file:///etc/hosts', { exact: true })
+    await inert.waitFor()
+    const fileBox = await inert.boundingBox()
+    if (fileBox === null) throw new Error('The printed non-web path has no bounding box')
+    let opened: unknown
+    const opener = (event: unknown): void => { opened = event }
+    page.context().once('page', opener)
+    await page.mouse.move(fileBox.x + fileBox.width / 2, fileBox.y + fileBox.height / 2)
+    await page.mouse.down()
+    await page.mouse.up()
+    await page.waitForTimeout(1_500)
+    page.context().off('page', opener)
+    expect(opened).toBeUndefined()
+    expect(tripwire.pageErrors).toEqual([])
+  })
+
   it('chooses a shell from the guide menu, opens it directly, and remembers it after reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'sidebar-terminal-shell-choice'))
     await page.locator('[data-sidebar-right-expand]').click()
