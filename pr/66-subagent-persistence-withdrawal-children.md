@@ -15,7 +15,7 @@ None。`SubagentManager.stopResidentChildren()` 是包内类的新方法，未�
 - `SubagentRuntime` 在已注入 `agents` 的作用域内，再开一个注入 `sessionPersistence` 的子作用域，其清理 effect 停止所有驻留子级（`stopResidentChildren()`）。持久化服务撤下时，Cordis 会等待这个依赖方卸载完毕后，才运行后端撤除路由、关闭句柄的清理；因此子级的收尾事件先写进存储日志。
 - 该作用域只停止驻留子级，不关闭管理器准入：持久化后端恢复后可照常创建、续接子级。没有持久化后端的组合中，该作用域从不激活，行为不变。
 - `drain()` 改为复用 `stopResidentChildren()`，行为不变。
-- `packages/subagent/subagent/README.md` / `README.zh.md` 的 "Activation settlement" 一节补充一句撤下持久化服务时的停止顺序（双语同行，已重新记录 `README.i18n.yaml`）。
+- `packages/subagent/subagent/README.md` / `README.zh.md` 的 "Activation settlement" 一节补充一句撤下持久化服务时的停止顺序（含中止在途创建；双语同行，已重新记录 `README.i18n.yaml`）。
 
 **Existing test behavior**：既有用例 `settles despite the persistence backend being disposed mid-run` 描述的正是被修复的行为——它先 `await` 后端卸载完成、再放行子级的模型调用，断言子级仍能结算。修复后，后端卸载会等待子级停止，这个顺序不再成立（测试用的 `GatedAdapter` 在闸门打开前不响应中止）。该用例改写为下方的回归用例，并保留原有的"无 `final session flush` 告警"断言。
 
@@ -37,7 +37,7 @@ None。未新增或删除包，未增删工作区包之间的运行时依赖：`
 
 **Test entries**（均本地运行；CI 另跑矩阵）
 
-- `pnpm exec vitest run packages/subagent/subagent/tests packages/api/session-controller/tests/subagent-access.host.spec.ts --maxWorkers=2 --coverage --coverage.include='packages/subagent/subagent/src/index.ts' --coverage.include='packages/subagent/subagent/src/manager.ts'` — 510 passed（含新增回归用例）；`src/index.ts` 与 `src/manager.ts` 语句/分支/函数/行 100%（742/742、406/406、156/156、647/647）。
+- `pnpm exec vitest run packages/subagent/subagent/tests packages/api/session-controller/tests/subagent-access.host.spec.ts --maxWorkers=2 --coverage --coverage.include='packages/subagent/subagent/src/index.ts' --coverage.include='packages/subagent/subagent/src/manager.ts'` — 511 passed（含新增回归用例与后续提交的 materialization 中止用例）；`src/index.ts` 与 `src/manager.ts` 语句/分支/函数/行 100%（742/742、406/406、156/156、647/647）。
 - 负对照：在 `src/index.ts` 中去掉新增的 `sessionPersistence` 注入作用域后运行回归用例 —— **1 failed**：撤除在子级停止前就已完成（`expected true to be false`）；更早一轮只比较日志的版本显示存储日志 10 个事件、实时日志 13 个事件，缺回复、`step/end`、`turn/end`。恢复后通过。
 - `pnpm run lint` — 通过（exit 0）。
 - `pnpm run test:docs` — 21 passed / 0 failed（含 translation pairing，`README.i18n.yaml` 已重新记录）。
@@ -49,7 +49,7 @@ None。未新增或删除包，未增删工作区包之间的运行时依赖：`
 
 ```
 Test Files  27 passed (27)
-     Tests  510 passed (510)
+     Tests  511 passed (511)
 
 Statements   : 100% ( 742/742 )
 Branches     : 100% ( 406/406 )
@@ -67,7 +67,7 @@ Tests  1 failed | 169 skipped (170)
 
 </details>
 
-**Known gap**：撤除开始时仍在创建中（尚未发布为驻留）的子级不在本次停止范围内；它若在撤除期间完成发布，会持有已撤下后端的句柄。持久化服务已从存储中移除，因此撤除期间不会再准入新的需持久化子级，这一窗口仅限撤除开始时已在途的创建。
+**Known gap（已由后续提交关闭）**：早先版本中，撤除开始时仍在创建中（尚未发布为驻留）的子级不在停止范围内，会在撤除期间完成发布并持有已撤下后端的句柄。后续提交把 `drain()` 的「中止在途创建并等待其回滚」两步并入 `stopResidentChildren()`（`drain()` 改为复用同一方法），创建中的子级现在会被中止并回滚，或完成后立即被同一轮停止扫除；回归用例 `aborts a gated materialization during withdrawal instead of leaving it a resident of the withdrawn backend` 以被 await 的串行 `agent/created` 监听器闸住创建过程，断言撤除在闸门释放前不能结算。
 
 ## AI Usage
 
