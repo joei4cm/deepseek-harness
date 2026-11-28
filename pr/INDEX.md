@@ -83,3 +83,4 @@ The `discussions/` directory holds reply drafts for upstream Discussions, ready 
 | `73-session-follow-rebaseline-coalesce.md` | `fix/session-follow-rebaseline-coalesce` | upstream `master`, dsh-v0.2.3-alpha.2 | `#11272` |
 | `74-llm-deepseek-attachment-read-failure.md` | `fix/llm-deepseek-attachment-read-failure` | upstream `master` `841f76d3c5` | `#14482` |
 | `75-ptc-workspace-root-retirement.md` | `fix/ptc-workspace-root-retirement` | upstream `master` `841f76d3c5` | `#14495` |
+| `76-hmr-purge-stale-realpath-cache.md` | `fix/hmr-purge-stale-realpath-cache` | upstream `master` `841f76d3c5` | `#14501` |
