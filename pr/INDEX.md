@@ -72,3 +72,4 @@ The `discussions/` directory holds reply drafts for upstream Discussions, ready 
 | `62-subagent-codex-config-bin.md` | `feat/subagent-codex-config-bin` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14447` |
 | `63-web-fetch-destination-claim.md` | `fix/web-fetch-destination-claim` | upstream `master`, dsh-v0.2.3-alpha.2 | `#14448` |
 | `64-goal-round-driver-teardown-fence.md` | `fix/goal-round-driver-teardown-fence` | upstream `master`, dsh-v0.2.3-alpha.2 | — |
+| `65-schedule-archive-admission-teardown.md` | `fix/schedule-archive-admission-teardown` | upstream `master`, dsh-v0.2.3-alpha.2 | — |
